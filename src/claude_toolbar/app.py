@@ -71,7 +71,8 @@ class ClaudeToolbarApp(rumps.App):
         self.menu = []
         self.session_lookup: Dict[str, SessionSummary] = {}
 
-        self.title = "⏳"
+        self._render_loading_state()
+
         self.refresh_timer = rumps.Timer(self.refresh_timer_tick, self.config.refresh_interval)
         self.refresh_timer.start()
         self._initial_timer = rumps.Timer(self._initial_refresh, 0.2)
@@ -81,6 +82,8 @@ class ClaudeToolbarApp(rumps.App):
     # Menu rendering
     # ------------------------------------------------------------------
     def refresh_timer_tick(self, _):
+        if self.tracker.is_initializing():
+            self._render_loading_state()
         self.tracker.update()
         usage_summary = self.tracker.get_usage_summary()
         raw_sessions = self.tracker.get_session_summaries()
@@ -90,6 +93,28 @@ class ClaudeToolbarApp(rumps.App):
     def _initial_refresh(self, timer: rumps.Timer) -> None:
         timer.stop()
         self.refresh_timer_tick(None)
+
+    def _render_loading_state(self) -> None:
+        self.title = "⏳"
+        self.usage_today_item.title = "Today: loading…"
+        self.usage_week_item.title = "Last 7 days: loading…"
+        self.usage_month_item.title = "This month: loading…"
+        self.limit_item.title = "Limit reset: loading…"
+        self.window_item.title = "Loading session data…"
+
+        self.menu.clear()
+        self.menu.add(self.usage_today_item)
+        self.menu.add(self.usage_week_item)
+        self.menu.add(self.usage_month_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.limit_item)
+        self.menu.add(self.window_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(rumps.MenuItem("Loading sessions…", callback=None))
+        self.menu.add(rumps.separator)
+        self.menu.add(self.refresh_item)
+        self.menu.add(self.open_config_item)
+        self.menu.add(self.quit_item)
 
     def _group_sessions(self, sessions: List[SessionSummary]) -> List[SessionSummary]:
         grouped: Dict[str, SessionSummary] = {}
