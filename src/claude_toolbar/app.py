@@ -71,9 +71,11 @@ class ClaudeToolbarApp(rumps.App):
         self.menu = []
         self.session_lookup: Dict[str, SessionSummary] = {}
 
+        self.title = "⏳"
         self.refresh_timer = rumps.Timer(self.refresh_timer_tick, self.config.refresh_interval)
         self.refresh_timer.start()
-        self.refresh_timer_tick(None)
+        self._initial_timer = rumps.Timer(self._initial_refresh, 0.2)
+        self._initial_timer.start()
 
     # ------------------------------------------------------------------
     # Menu rendering
@@ -84,6 +86,10 @@ class ClaudeToolbarApp(rumps.App):
         raw_sessions = self.tracker.get_session_summaries()
         grouped_sessions = self._group_sessions(raw_sessions)
         self._render_menu(usage_summary, grouped_sessions)
+
+    def _initial_refresh(self, timer: rumps.Timer) -> None:
+        timer.stop()
+        self.refresh_timer_tick(None)
 
     def _group_sessions(self, sessions: List[SessionSummary]) -> List[SessionSummary]:
         grouped: Dict[str, SessionSummary] = {}
@@ -120,12 +126,12 @@ class ClaudeToolbarApp(rumps.App):
         self, summary: UsageSummary, sessions: List[SessionSummary]
     ) -> None:
         if self.tracker.is_initializing():
-            self.usage_today_item.title = 'Today: loading…'
-            self.usage_week_item.title = 'Last 7 days: loading…'
-            self.usage_month_item.title = 'This month: loading…'
-            self.limit_item.title = 'Limit reset: loading…'
-            self.window_item.title = 'Loading session data…'
-            self.title = ''
+            self.usage_today_item.title = "Today: loading…"
+            self.usage_week_item.title = "Last 7 days: loading…"
+            self.usage_month_item.title = "This month: loading…"
+            self.limit_item.title = "Limit reset: loading…"
+            self.window_item.title = "Loading session data…"
+            self.title = "⏳"
             return
         self.usage_today_item.title = (
             f"Today: {format_tokens(summary.today.total_tokens)} tokens ({format_currency(summary.today_cost)})"
