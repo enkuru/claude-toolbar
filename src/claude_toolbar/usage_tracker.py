@@ -5,6 +5,8 @@ import re
 import subprocess
 import time
 from collections import defaultdict, OrderedDict
+import logging
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +43,16 @@ SCAN_INTERVAL_SECONDS = 30.0
 FILES_PER_TICK = 40
 SNAPSHOT_SAVE_INTERVAL = 5.0
 SNAPSHOT_PATH = Path.home() / ".config" / "claude_toolbar" / "session_snapshot.json"
+SESSION_CACHE_PATH = Path.home() / ".config" / "claude_toolbar" / "session_cache.json"
+
+DEBUG_MODE = os.getenv("CLAUDE_TOOLBAR_DEBUG")
+logger = logging.getLogger("claude_toolbar")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("[claude-toolbar] %(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 
 
 @dataclass
@@ -72,8 +84,45 @@ class UsageTracker:
         self._initial_passes_remaining = 3
         self._initializing = True
         self._load_snapshots()
+        self._load_session_cache()
         if self.file_states:
             self._initializing = len(self.sessions) == 0
+        logger.debug(
+            "UsageTracker initialized: sessions=%s, files=%s, initializing=%s",
+            len(self.sessions),
+            len(self.file_states),
+            self._initializing,
+        )
+
+    def _load_session_cache(self) -> None:
+        try:
+            with SESSION_CACHE_PATH.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except FileNotFoundError:
+            return
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(data, dict):
+            return
+        for session_id, payload in data.items():
+            totals = UsageTotals(
+                input_tokens=int(payload.get("input_tokens", 0)),
+                output_tokens=int(payload.get("output_tokens", 0)),
+                cache_creation_tokens=int(payload.get("cache_creation_tokens", 0)),
+                cache_read_tokens=int(payload.get("cache_read_tokens", 0)),
+            )
+            session = SessionState(
+                session_id=session_id,
+                project=payload.get("project") or session_id,
+                file_path=payload.get("file_path") or "",
+                first_activity=parse_timestamp(payload.get("first_activity")),
+                last_activity=parse_timestamp(payload.get("last_activity")),
+                totals=totals,
+            )
+            session.cost_usd = float(payload.get("cost_usd", 0.0))
+            self.sessions[session_id] = session
+        if self.sessions:
+            logger.debug("Loaded %s sessions from cache", len(self.sessions))
     def _load_snapshots(self) -> None:
         try:
             with SNAPSHOT_PATH.open("r", encoding="utf-8") as handle:
@@ -108,6 +157,27 @@ class UsageTracker:
         except OSError:
             return
 
+    def _persist_session_cache(self) -> None:
+        try:
+            SESSION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            payload = {}
+            for session_id, session in self.sessions.items():
+                payload[session_id] = {
+                    "project": session.project,
+                    "file_path": session.file_path,
+                    "first_activity": session.first_activity.isoformat() if session.first_activity else None,
+                    "last_activity": session.last_activity.isoformat() if session.last_activity else None,
+                    "input_tokens": session.totals.input_tokens,
+                    "output_tokens": session.totals.output_tokens,
+                    "cache_creation_tokens": session.totals.cache_creation_tokens,
+                    "cache_read_tokens": session.totals.cache_read_tokens,
+                    "cost_usd": session.cost_usd,
+                }
+            with SESSION_CACHE_PATH.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+        except OSError:
+            return
+
     def is_initializing(self) -> bool:
         return self._initializing
 
@@ -137,6 +207,7 @@ class UsageTracker:
             self._initializing = False
         if self._dirty_snapshot and time.time() - self._last_snapshot_save > SNAPSHOT_SAVE_INTERVAL:
             self._persist_snapshots()
+            self._persist_session_cache()
         self._refresh_ccusage_prices()
 
     def get_session_summaries(self) -> List[SessionSummary]:
@@ -448,6 +519,7 @@ class UsageTracker:
                     self.daily_totals.update(totals_map)
                 self.daily_costs = costs
 
+            self._persist_session_cache()
             self._last_price_refresh = now_ts
         except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError):
             return

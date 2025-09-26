@@ -108,6 +108,18 @@ print(tracker.get_usage_summary())
 PY
 ```
 
+To trace startup behaviour, enable debug logging by launching with:
+
+```bash
+CLAUDE_TOOLBAR_DEBUG=1 claude-toolbar
+```
+
+or run the measurement helper:
+
+```bash
+PYTHONPATH=src python scripts/measure_startup.py
+```
+
 ---
 
 Made for Claude CLI power users who want a quick sanity check on usage caps and long-running sessions right in the menu bar.
