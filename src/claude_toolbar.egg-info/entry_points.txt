@@ -1,0 +1,2 @@
+[console_scripts]
+claude-toolbar = claude_toolbar.app:main

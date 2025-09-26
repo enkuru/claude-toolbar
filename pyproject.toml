@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-toolbar"
+version = "0.1.0"
+description = "Menu bar toolbar to monitor Claude usage and sessions"
+authors = [{name = "Enes", email = "enes@example.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31",
+  "psutil>=5.9",
+  "rumps>=0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.1",
+  "ruff>=0.3",
+]
+
+[project.scripts]
+claude-toolbar = "claude_toolbar.app:main"

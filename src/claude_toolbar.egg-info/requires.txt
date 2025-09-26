@@ -1,0 +1,7 @@
+requests>=2.31
+psutil>=5.9
+rumps>=0.4
+
+[dev]
+black>=24.1
+ruff>=0.3
