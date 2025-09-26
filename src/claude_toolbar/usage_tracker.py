@@ -70,7 +70,10 @@ class UsageTracker:
         self._last_snapshot_save = 0.0
         self._max_files_per_tick = FILES_PER_TICK
         self._initial_passes_remaining = 3
+        self._initializing = True
         self._load_snapshots()
+        if self.file_states:
+            self._initializing = len(self.sessions) == 0
     def _load_snapshots(self) -> None:
         try:
             with SNAPSHOT_PATH.open("r", encoding="utf-8") as handle:
@@ -106,7 +109,7 @@ class UsageTracker:
             return
 
     def is_initializing(self) -> bool:
-        return len(self.sessions) == 0 and (self._initial_passes_remaining > 0 or not self.file_states)
+        return self._initializing
 
 
     # ------------------------------------------------------------------
@@ -122,7 +125,6 @@ class UsageTracker:
             limit = max(self._max_files_per_tick, 800)
             self._initial_passes_remaining -= 1
         processed = 0
-        processed = 0
         for path, state in list(self.file_states.items()):
             if processed >= limit:
                 break
@@ -131,6 +133,8 @@ class UsageTracker:
             processed += 1
         if self._process_monitor:
             self._refresh_processes()
+        if self.sessions and self._initializing:
+            self._initializing = False
         if self._dirty_snapshot and time.time() - self._last_snapshot_save > SNAPSHOT_SAVE_INTERVAL:
             self._persist_snapshots()
         self._refresh_ccusage_prices()
