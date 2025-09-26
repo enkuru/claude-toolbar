@@ -186,6 +186,7 @@ class UsageTracker:
     # Public API
     # ------------------------------------------------------------------
     def update(self) -> None:
+        update_start = time.perf_counter()
         now = time.time()
         if now - self._last_scan > SCAN_INTERVAL_SECONDS or not self.file_states:
             self._discover_files()
@@ -209,6 +210,13 @@ class UsageTracker:
             self._persist_snapshots()
             self._persist_session_cache()
         self._refresh_ccusage_prices()
+        logger.debug(
+            "update complete in %.3fs (sessions=%s processed_limit=%s, initializing=%s)",
+            time.perf_counter() - update_start,
+            len(self.sessions),
+            limit,
+            self._initializing,
+        )
 
     def get_session_summaries(self) -> List[SessionSummary]:
         now = datetime.now(timezone.utc)
@@ -294,6 +302,7 @@ class UsageTracker:
                     state.session_id_hint = snapshot.get("session_id")
                 self.file_states[path] = state
                 self.file_states.move_to_end(path, last=False)
+        logger.debug("discovered %s files", len(self.file_states))
 
         existing_paths = {state.path for state in self.file_states.values() if state.path.exists()}
         for path in list(self.file_states.keys()):
@@ -471,6 +480,7 @@ class UsageTracker:
         now_ts = time.time()
         if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
             return
+        logger.debug("refreshing ccusage prices…")
         try:
             session_proc = subprocess.run(
                 ["ccusage", "session", "--json", "-O"],
@@ -521,7 +531,13 @@ class UsageTracker:
 
             self._persist_session_cache()
             self._last_price_refresh = now_ts
+            logger.debug(
+                "ccusage refresh complete: sessions=%s daily=%s",
+                len(self.session_costs),
+                len(self.daily_costs),
+            )
         except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError):
+            logger.debug("ccusage refresh failed", exc_info=DEBUG_MODE)
             return
 
     def _determine_status(
