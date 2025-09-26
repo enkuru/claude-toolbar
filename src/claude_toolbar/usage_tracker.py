@@ -195,6 +195,7 @@ class UsageTracker:
         if self._initial_passes_remaining > 0:
             limit = max(self._max_files_per_tick, 800)
             self._initial_passes_remaining -= 1
+            logger.debug("initial pass remaining=%s limit=%s", self._initial_passes_remaining, limit)
         processed = 0
         for path, state in list(self.file_states.items()):
             if processed >= limit:

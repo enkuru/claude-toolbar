@@ -75,7 +75,7 @@ class ClaudeToolbarApp(rumps.App):
 
         self.refresh_timer = rumps.Timer(self.refresh_timer_tick, self.config.refresh_interval)
         self.refresh_timer.start()
-        self._initial_timer = rumps.Timer(self._initial_refresh, 0.2)
+        self._initial_timer = rumps.Timer(self._initial_refresh, 0.1)
         self._initial_timer.start()
 
     # ------------------------------------------------------------------
