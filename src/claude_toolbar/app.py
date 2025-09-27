@@ -326,7 +326,7 @@ class ClaudeToolbarApp(rumps.App):
                 parts.append(f"{GREEN_DOT}{len(running)}")
             self.title = " ".join(parts)
         else:
-            self.title = ""
+            self.title = f"{WHITE_DOT} Idle"
 
     def _populate_sessions(self, sessions: List[SessionSummary]) -> None:
         self.session_lookup.clear()
@@ -522,6 +522,12 @@ def _format_session_details(summary: SessionSummary) -> str:
 
 
 def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: float = 1.0) -> bool:
+    if summary.awaiting_approval or summary.awaiting_message:
+        return True
+    if summary.pending_tool_count:
+        return True
+    if summary.processes:
+        return True
     if summary.last_activity is None:
         return False
     threshold = max(idle_seconds, 60) * max(multiplier, 1.0)
