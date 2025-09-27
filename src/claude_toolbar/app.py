@@ -329,12 +329,25 @@ class ClaudeToolbarApp(rumps.App):
             self.menu.add(empty_item)
             return
 
-        for summary in sessions[:MAX_SESSIONS]:
-            label = self._session_label(summary)
-            item = rumps.MenuItem(label, callback=self._on_session_clicked)
-            item._session_id = summary.session_id  # type: ignore[attr-defined]
-            self.session_lookup[summary.session_id] = summary
-            self.menu.add(item)
+        limited = sessions[:MAX_SESSIONS]
+        if not limited:
+            message = "Loading sessions…" if self.tracker.is_initializing() else "No recent sessions"
+            empty_item = rumps.MenuItem(message, callback=None)
+            self.menu.add(empty_item)
+            return
+
+        buckets = self._bucket_sessions(limited)
+        for bucket, entries in buckets:
+            if not entries:
+                continue
+            header = rumps.MenuItem(bucket, callback=None)
+            self.menu.add(header)
+            for summary in entries:
+                label = self._session_label(summary)
+                item = rumps.MenuItem(f"  {label}", callback=self._on_session_clicked)
+                item._session_id = summary.session_id  # type: ignore[attr-defined]
+                self.session_lookup[summary.session_id] = summary
+                self.menu.add(item)
 
 
     def _session_label(self, summary: SessionSummary) -> str:
@@ -349,6 +362,49 @@ class ClaudeToolbarApp(rumps.App):
         cost_text = format_currency(summary.cost_usd) if summary.cost_usd else "$0.00"
         status_text = _session_status_text(summary, self.config.idle_seconds)
         return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {status_text} — {relative}"
+
+    def _bucket_sessions(
+        self, sessions: List[SessionSummary]
+    ) -> List[tuple[str, List[SessionSummary]]]:
+        now_local = datetime.now().astimezone()
+        today = now_local.date()
+        buckets: Dict[str, List[SessionSummary]] = {
+            "Today": [],
+            "Yesterday": [],
+            "Earlier this week": [],
+            "Earlier this month": [],
+            "Older": [],
+            "No activity": [],
+        }
+
+        for summary in sessions:
+            last_activity = summary.last_activity
+            if last_activity is None:
+                buckets["No activity"].append(summary)
+                continue
+            local_dt = last_activity.astimezone()
+            session_date = local_dt.date()
+            delta_days = (today - session_date).days
+            if delta_days <= 0:
+                buckets["Today"].append(summary)
+            elif delta_days == 1:
+                buckets["Yesterday"].append(summary)
+            elif 1 < delta_days <= 6:
+                buckets["Earlier this week"].append(summary)
+            elif session_date.month == today.month and session_date.year == today.year:
+                buckets["Earlier this month"].append(summary)
+            else:
+                buckets["Older"].append(summary)
+
+        ordered_labels = [
+            "Today",
+            "Yesterday",
+            "Earlier this week",
+            "Earlier this month",
+            "Older",
+            "No activity",
+        ]
+        return [(label, buckets[label]) for label in ordered_labels]
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -373,6 +429,7 @@ class ClaudeToolbarApp(rumps.App):
         if not summary:
             return
         details = _format_session_details(summary)
+        rumps.alert(title="Claude Session", message=details)
 
 
 def _pretty_project(summary: SessionSummary) -> str:
