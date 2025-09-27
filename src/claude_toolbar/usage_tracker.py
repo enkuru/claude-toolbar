@@ -7,6 +7,7 @@ import time
 from collections import defaultdict, OrderedDict
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -93,6 +94,9 @@ class UsageTracker:
             len(self.file_states),
             self._initializing,
         )
+        self._ccusage_thread: Optional[threading.Thread] = None
+        self._ccusage_lock = threading.Lock()
+        self._ccusage_thread: Optional[threading.Thread] = None
 
     def _load_session_cache(self) -> None:
         try:
@@ -210,7 +214,7 @@ class UsageTracker:
         if self._dirty_snapshot and time.time() - self._last_snapshot_save > SNAPSHOT_SAVE_INTERVAL:
             self._persist_snapshots()
             self._persist_session_cache()
-        self._refresh_ccusage_prices()
+        self._maybe_refresh_ccusage_async()
         logger.debug(
             "update complete in %.3fs (sessions=%s processed_limit=%s, initializing=%s)",
             time.perf_counter() - update_start,
@@ -475,19 +479,42 @@ class UsageTracker:
                     )
                 )
 
-    def _refresh_ccusage_prices(self) -> None:
+    def _maybe_refresh_ccusage_async(self) -> None:
+        if not self.config.enable_ccusage_prices:
+            return
+        if self._ccusage_thread and self._ccusage_thread.is_alive():
+            return
+        now_ts = time.time()
+        if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
+            return
+
+        def worker() -> None:
+            try:
+                self._refresh_ccusage_prices_blocking()
+            finally:
+                self._ccusage_thread = None
+
+        logger.debug("scheduling ccusage refresh thread")
+        self._ccusage_thread = threading.Thread(target=worker, name="ccusage-refresh", daemon=True)
+        self._ccusage_thread.start()
+
+    def _refresh_ccusage_prices_blocking(self) -> None:
         if not self.config.enable_ccusage_prices:
             return
         now_ts = time.time()
         if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
             return
         logger.debug("refreshing ccusage prices…")
-        try:
-            session_proc = subprocess.run(
-                ["ccusage", "session", "--json", "-O"],
-                capture_output=True,
-                text=True,
-                timeout=30,
+        with self._ccusage_lock:
+            now_ts = time.time()
+            if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
+                return
+            try:
+                session_proc = subprocess.run(
+                    ["ccusage", "session", "--json", "-O"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
             )
             if session_proc.returncode == 0 and session_proc.stdout:
                 session_data = json.loads(session_proc.stdout)
@@ -538,7 +565,7 @@ class UsageTracker:
                 len(self.daily_costs),
             )
         except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError):
-            logger.debug("ccusage refresh failed", exc_info=DEBUG_MODE)
+            logger.debug("ccusage refresh failed", exc_info=bool(DEBUG_MODE))
             return
 
     def _determine_status(
