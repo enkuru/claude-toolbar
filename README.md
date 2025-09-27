@@ -67,7 +67,6 @@ Configuration lives at `~/.config/claude_toolbar/config.json`. All fields are op
 - `ccusage_refresh_interval`: Seconds between reusing `ccusage` output (defaults to 120).
 - `enable_ccusage_prices`: Disable if you do not have `ccusage` installed or don’t want dollar estimates.
 - `limit_reset_override`: Optional ISO timestamp to use when the CLI has not logged a reset hint (or when you want to correct it manually).
-- `launch_command`: Command array used to start a PTY-managed Claude session. Use `{session_id}`, `{project}`, `{project_name}`, or `{project_path}` placeholders if you need to inject context-specific flags.
 
 After editing the configuration you can select **Refresh Now** from the menu or restart the app to reload it.
 
@@ -80,12 +79,7 @@ Clicking any session entry reveals:
 - Any queued approval/error message (e.g. "This command requires approval")
 - The associated `claude` process IDs if the process monitor is enabled
 
-Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. Idle sessions also offer **Send Command…** and **Schedule Run…** actions:
-
-- **Send Command…** launches the PTY manager (if needed) and injects the text you enter. Optional auto-approval automatically answers waiting prompts with the numeric choice you specify.
-- **Schedule Run…** queues a session to relaunch after a delay. Scheduled items appear in the menu so you can cancel or fire them early.
-
-When auto-approval is enabled the toolbar watches the transcript and sends the configured choice (default `1`) whenever the session is waiting for approval.
+Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. When Claude asks for approval, the session row turns orange so you can quickly jump back to the terminal.
 
 ## Notes & Limitations
 

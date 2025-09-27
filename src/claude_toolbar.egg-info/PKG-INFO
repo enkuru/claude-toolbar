@@ -94,12 +94,7 @@ Clicking any session entry reveals:
 - Any queued approval/error message (e.g. "This command requires approval")
 - The associated `claude` process IDs if the process monitor is enabled
 
-Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. Idle sessions also offer **Send Command…** and **Schedule Run…** actions:
-
-- **Send Command…** launches the PTY manager (if needed) and injects the text you enter. Optional auto-approval automatically answers waiting prompts with the numeric choice you specify.
-- **Schedule Run…** queues a session to relaunch after a delay. Scheduled items appear in the menu so you can cancel or fire them early.
-
-When auto-approval is enabled the toolbar watches the transcript and sends the configured choice (default `1`) whenever the session is waiting for approval.
+Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. When Claude requests approval, the session row turns orange so you can spot the prompt immediately.
 
 ## Notes & Limitations
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -18,8 +18,6 @@ except ImportError:  # pragma: no cover - macOS only integration
 from .config import CONFIG_PATH, ToolbarConfig, load_config, save_config
 from .models import SessionStatus, SessionSummary, UsageSummary
 from .paths import discover_claude_paths
-from .pty_manager import PtyManager, SessionLaunchInfo
-from .scheduler import ScheduledJob, SessionScheduler
 from .usage_tracker import UsageTracker
 from .utils import format_currency, format_relative, format_tokens, format_ts
 
@@ -87,10 +85,6 @@ class ClaudeToolbarApp(rumps.App):
         self._pending_sessions: Optional[List[SessionSummary]] = None
         self._loading_started_at = time.monotonic()
 
-        self.pty_manager = PtyManager(self.config.launch_command)
-        self.scheduler = SessionScheduler(self.pty_manager)
-        self._scheduled_jobs_cache: Dict[str, ScheduledJob] = {}
-
         self._render_loading_state()
 
         self._refresh_interval = self.config.refresh_interval
@@ -117,9 +111,6 @@ class ClaudeToolbarApp(rumps.App):
         usage_summary = self.tracker.get_usage_summary()
         raw_sessions = self.tracker.get_session_summaries()
         grouped_sessions = self._group_sessions(raw_sessions)
-
-        for summary in grouped_sessions:
-            self.pty_manager.auto_approve_from_summary(summary)
 
         self._pending_usage_summary = usage_summary
         self._pending_sessions = grouped_sessions
@@ -247,8 +238,6 @@ class ClaudeToolbarApp(rumps.App):
         self._populate_sessions(sessions)
 
         self.menu.add(rumps.separator)
-        self._render_scheduled_runs_section()
-        self.menu.add(rumps.separator)
         self.menu.add(self.refresh_item)
         self.menu.add(self.open_config_item)
         self.menu.add(self.quit_item)
@@ -347,18 +336,6 @@ class ClaudeToolbarApp(rumps.App):
             self.session_lookup[summary.session_id] = summary
             self.menu.add(item)
 
-    def _render_scheduled_runs_section(self) -> None:
-        jobs = self._refresh_scheduled_jobs()
-        if not jobs:
-            self.menu.add(rumps.MenuItem("Scheduled runs: none", callback=None))
-            return
-
-        self.menu.add(rumps.MenuItem("Scheduled runs", callback=None))
-        for job in jobs:
-            label = self._scheduled_job_label(job)
-            item = rumps.MenuItem(label, callback=self._on_scheduled_job_clicked)
-            item._scheduled_job_id = job.job_id  # type: ignore[attr-defined]
-            self.menu.add(item)
 
     def _session_label(self, summary: SessionSummary) -> str:
         emoji = _session_status_icon(summary, self.config.idle_seconds)
@@ -372,38 +349,6 @@ class ClaudeToolbarApp(rumps.App):
         cost_text = format_currency(summary.cost_usd) if summary.cost_usd else "$0.00"
         status_text = _session_status_text(summary, self.config.idle_seconds)
         return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {status_text} — {relative}"
-
-    def _refresh_scheduled_jobs(self) -> List[ScheduledJob]:
-        jobs = sorted(self.scheduler.list_jobs(), key=lambda job: job.run_at)
-        self._scheduled_jobs_cache = {job.job_id: job for job in jobs}
-        return jobs
-
-    def _scheduled_job_label(self, job: ScheduledJob) -> str:
-        run_at = job.run_at
-        if run_at.tzinfo is not None:
-            run_at = run_at.astimezone()
-        time_text = run_at.strftime("%Y-%m-%d %H:%M")
-        command_text = (job.initial_command or "(no command)").strip()
-        if len(command_text) > 40:
-            command_text = f"{command_text[:37]}…"
-        project_name = job.launch_info.project_name
-        return f"{time_text} — {project_name} — {command_text}"
-
-    def _format_scheduled_job_details(self, job: ScheduledJob) -> str:
-        run_at = job.run_at
-        if run_at.tzinfo is not None:
-            run_at = run_at.astimezone()
-        time_text = run_at.strftime("%Y-%m-%d %H:%M:%S")
-        command_text = job.initial_command or "(no command)"
-        auto_text = "enabled" if job.auto_approve else "disabled"
-        return (
-            f"Session: {job.launch_info.session_id}\n"
-            f"Project: {job.launch_info.project_name}\n"
-            f"Working dir: {job.launch_info.resolve_working_directory()}\n"
-            f"Runs at: {time_text}\n"
-            f"Command: {command_text}\n"
-            f"Auto approval: {auto_text} (choice {job.approval_choice})"
-        )
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -428,189 +373,6 @@ class ClaudeToolbarApp(rumps.App):
         if not summary:
             return
         details = _format_session_details(summary)
-        can_schedule = True
-        if can_schedule:
-            response = rumps.alert(
-                title="Claude Session",
-                message=details,
-                ok="Close",
-                cancel="Send Command…",
-                other="Schedule Run…",
-            )
-        else:
-            response = rumps.alert(
-                title="Claude Session",
-                message=details,
-                ok="Close",
-                cancel="Send Command…",
-            )
-
-        if response == 0:
-            self._prompt_send_command(summary)
-        elif response == 2 and can_schedule:
-            self._prompt_schedule_run(summary)
-
-    def _on_scheduled_job_clicked(self, sender: rumps.MenuItem) -> None:
-        job_id = getattr(sender, "_scheduled_job_id", None)
-        job = self._scheduled_jobs_cache.get(job_id)
-        if not job:
-            return
-        message = self._format_scheduled_job_details(job)
-        response = rumps.alert(
-            title="Scheduled Run",
-            message=message,
-            ok="Close",
-            cancel="Cancel Job",
-            other="Run Now",
-        )
-        if response == 1:
-            if self.scheduler.cancel_job(job.job_id):
-                rumps.notification(
-                    title="Claude Toolbar",
-                    subtitle="Scheduled run cancelled",
-                    message=self._scheduled_job_label(job),
-                )
-        elif response == 2:
-            removed = self.scheduler.cancel_job(job.job_id)
-            try:
-                self.pty_manager.start_session(
-                    job.launch_info,
-                    initial_command=job.initial_command,
-                    auto_approve=job.auto_approve,
-                    approval_choice=job.approval_choice,
-                )
-            except Exception:
-                rumps.notification(
-                    title="Claude Toolbar",
-                    subtitle="Unable to launch session",
-                    message=self._scheduled_job_label(job),
-                )
-            else:
-                subtitle = "Scheduled run launched" if removed else "Session launched"
-                rumps.notification(
-                    title="Claude Toolbar",
-                    subtitle=subtitle,
-                    message=self._scheduled_job_label(job),
-                )
-        self._render_pending_menu()
-
-    def _prompt_send_command(self, summary: SessionSummary) -> None:
-        prompt = rumps.Window(
-            title="Send Command",
-            message=f"Send a command to session {summary.session_id}\nProject: {_pretty_project(summary)}",
-            default_text="/resume",
-            ok="Send",
-            cancel="Cancel",
-        )
-        response = prompt.run()
-        if response.clicked != 0 or not response.text:
-            return
-        command = response.text.strip()
-        if not command:
-            return
-        auto_approve, choice = self._ask_auto_approve()
-        info = self._build_launch_info(summary)
-        try:
-            self.pty_manager.start_session(
-                info,
-                initial_command=command,
-                auto_approve=auto_approve,
-                approval_choice=choice,
-            )
-        except Exception:
-            rumps.notification(
-                title="Claude Toolbar",
-                subtitle="Unable to deliver command",
-                message=_pretty_project(summary),
-            )
-            return
-        rumps.notification(
-            title="Claude Toolbar",
-            subtitle="Command sent",
-            message=f"{_pretty_project(summary)} — {command}",
-        )
-
-    def _prompt_schedule_run(self, summary: SessionSummary) -> None:
-        command_prompt = rumps.Window(
-            title="Schedule Run",
-            message=f"Command for session {summary.session_id}\nProject: {_pretty_project(summary)}",
-            default_text="/resume",
-            ok="Next",
-            cancel="Cancel",
-        )
-        command_response = command_prompt.run()
-        if command_response.clicked != 0 or not command_response.text:
-            return
-        command = command_response.text.strip()
-        if not command:
-            return
-
-        timing_prompt = rumps.Window(
-            title="Schedule Run",
-            message="Start after how many minutes? (0 for immediate)",
-            default_text="0",
-            ok="Schedule",
-            cancel="Cancel",
-        )
-        timing_response = timing_prompt.run()
-        if timing_response.clicked != 0 or not timing_response.text:
-            return
-        try:
-            minutes = float(timing_response.text.strip())
-        except ValueError:
-            rumps.notification(
-                title="Claude Toolbar",
-                subtitle="Invalid schedule delay",
-                message=timing_response.text.strip(),
-            )
-            return
-        run_at = datetime.now() + timedelta(minutes=max(0.0, minutes))
-
-        auto_approve, choice = self._ask_auto_approve()
-        info = self._build_launch_info(summary)
-        job = self.scheduler.schedule_job(
-            info,
-            run_at=run_at,
-            initial_command=command,
-            auto_approve=auto_approve,
-            approval_choice=choice,
-        )
-        rumps.notification(
-            title="Claude Toolbar",
-            subtitle="Run scheduled",
-            message=self._scheduled_job_label(job),
-        )
-        self._render_pending_menu()
-
-    def _ask_auto_approve(self) -> tuple[bool, str]:
-        response = rumps.alert(
-            title="Auto Approve",
-            message="Automatically approve tool requests (sends a numeric choice)?",
-            ok="Yes",
-            cancel="No",
-        )
-        if response != 0:
-            return False, "1"
-        choice_prompt = rumps.Window(
-            title="Auto Approve",
-            message="Enter the numeric response to send when approval is required",
-            default_text="1",
-            ok="Save",
-            cancel="Cancel",
-        )
-        choice_response = choice_prompt.run()
-        if choice_response.clicked != 0 or not choice_response.text:
-            return True, "1"
-        choice = choice_response.text.strip() or "1"
-        return True, choice
-
-    def _build_launch_info(self, summary: SessionSummary) -> SessionLaunchInfo:
-        return SessionLaunchInfo(
-            session_id=summary.session_id,
-            project=summary.project,
-            cwd=summary.cwd,
-            file_path=summary.file_path,
-        )
 
 
 def _pretty_project(summary: SessionSummary) -> str:

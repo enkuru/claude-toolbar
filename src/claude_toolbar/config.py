@@ -24,7 +24,6 @@ DEFAULT_CONFIG = {
     "ccusage_refresh_interval": 120,
     "enable_ccusage_prices": True,
     "limit_reset_override": None,
-    "launch_command": ["claude", "code"],
 }
 
 
@@ -39,7 +38,6 @@ class ToolbarConfig:
     ccusage_refresh_interval: int = DEFAULT_CONFIG["ccusage_refresh_interval"]
     enable_ccusage_prices: bool = DEFAULT_CONFIG["enable_ccusage_prices"]
     limit_reset_override: Optional[datetime] = None
-    launch_command: List[str] = field(default_factory=lambda: list(DEFAULT_CONFIG["launch_command"]))
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ToolbarConfig":
@@ -66,11 +64,6 @@ class ToolbarConfig:
         )
         override_raw = data.get("limit_reset_override")
         limit_reset_override = _parse_datetime(override_raw) if override_raw else None
-        launch_command_raw = data.get("launch_command", DEFAULT_CONFIG["launch_command"])
-        if isinstance(launch_command_raw, list) and all(isinstance(item, str) for item in launch_command_raw):
-            launch_command = [str(item) for item in launch_command_raw]
-        else:
-            launch_command = list(DEFAULT_CONFIG["launch_command"])
 
         return cls(
             claude_paths=paths,
@@ -82,7 +75,6 @@ class ToolbarConfig:
             ccusage_refresh_interval=ccusage_refresh_interval,
             enable_ccusage_prices=enable_ccusage_prices,
             limit_reset_override=limit_reset_override,
-            launch_command=launch_command,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -98,7 +90,6 @@ class ToolbarConfig:
             "limit_reset_override": self.limit_reset_override.isoformat()
             if self.limit_reset_override
             else None,
-            "launch_command": list(self.launch_command),
         }
 
 
