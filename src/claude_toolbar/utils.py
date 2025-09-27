@@ -34,19 +34,6 @@ def format_tokens(tokens: int) -> str:
     return str(tokens)
 
 
-def format_elapsed(seconds: float) -> str:
-    seconds = int(seconds)
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, sec = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {sec}s"
-    hours, minutes = divmod(minutes, 60)
-    if hours < 24:
-        return f"{hours}h {minutes}m"
-    days, hours = divmod(hours, 24)
-    return f"{days}d {hours}h"
-
 
 def format_ts(dt: Optional[datetime]) -> str:
     if dt is None:
@@ -80,7 +67,6 @@ def format_currency(value: Optional[float]) -> str:
 
 __all__ = [
     "format_currency",
-    "format_elapsed",
     "format_relative",
     "format_tokens",
     "format_ts",

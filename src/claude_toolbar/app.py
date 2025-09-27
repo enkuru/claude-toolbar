@@ -112,7 +112,6 @@ class ClaudeToolbarApp(rumps.App):
         else:
             self._set_refresh_interval(self.config.refresh_interval)
             self._ensure_fast_refresh_timer()
-            self._ensure_fast_refresh_timer()
 
         usage_summary = self.tracker.get_usage_summary()
         raw_sessions = self.tracker.get_session_summaries()

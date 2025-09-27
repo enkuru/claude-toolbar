@@ -96,14 +96,12 @@ class UsageTracker:
         self._load_session_cache()
         if self.file_states:
             self._initializing = len(self.sessions) == 0
-        self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
         logger.debug(
             "UsageTracker initialized: sessions=%s, files=%s, initializing=%s",
             len(self.sessions),
             len(self.file_states),
             self._initializing,
         )
-        self._ccusage_thread: Optional[threading.Thread] = None
         self._ccusage_lock = threading.Lock()
         self._ccusage_thread: Optional[threading.Thread] = None
 
@@ -401,8 +399,11 @@ class UsageTracker:
                 project=state.project,
                 file_path=str(state.path),
             )
-            if state.project in self.session_costs:
-                session.cost_usd = self.session_costs[state.project]
+            cached_cost = self.session_costs.get(session_id)
+            if cached_cost is None and state.project:
+                cached_cost = self.session_costs.get(state.project)
+            if cached_cost is not None:
+                session.cost_usd = cached_cost
             self.sessions[session_id] = session
 
         timestamp = parse_timestamp(data.get("timestamp"))
@@ -575,16 +576,35 @@ class UsageTracker:
                 if session_proc.returncode == 0 and session_proc.stdout:
                     session_data = json.loads(session_proc.stdout)
                     sessions = session_data.get("sessions", [])
-                    mapping: Dict[str, float] = {}
+                    by_session: Dict[str, float] = {}
+                    by_project: Dict[str, float] = {}
                     for item in sessions:
-                        key = str(item.get("sessionId"))
-                        if not key:
+                        try:
+                            cost = float(item.get("totalCost", 0.0))
+                        except (TypeError, ValueError):
                             continue
-                        mapping[key] = float(item.get("totalCost", 0.0))
-                    self.session_costs = mapping
+                        session_key = item.get("sessionId")
+                        if isinstance(session_key, str) and session_key:
+                            by_session[session_key] = cost
+                        for alt_key in (
+                            "project",
+                            "projectId",
+                            "projectName",
+                            "workspaceId",
+                            "workspace",
+                            "path",
+                        ):
+                            alt_value = item.get(alt_key)
+                            if isinstance(alt_value, str) and alt_value:
+                                by_project.setdefault(alt_value, cost)
+                    combined_mapping = {**by_project, **by_session}
+                    self.session_costs = combined_mapping
                     for session in self.sessions.values():
-                        if session.project in mapping:
-                            session.cost_usd = mapping[session.project]
+                        cost = combined_mapping.get(session.session_id)
+                        if cost is None and session.project:
+                            cost = combined_mapping.get(session.project)
+                        if cost is not None:
+                            session.cost_usd = cost
 
                 daily_proc = subprocess.run(
                     ["ccusage", "daily", "--json", "-O"],

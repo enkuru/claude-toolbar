@@ -5,7 +5,6 @@ Summary: Menu bar toolbar to monitor Claude usage and sessions
 Author-email: Enes <enes@example.com>
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: requests>=2.31
 Requires-Dist: psutil>=5.9
 Requires-Dist: rumps>=0.4
 Provides-Extra: dev
