@@ -539,6 +539,8 @@ def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: f
 
 def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.limit_blocked and summary.processes:
+        if _limit_reset_available(summary):
+            return ORANGE_DOT
         return RED_DOT
     if summary.awaiting_approval or summary.awaiting_message:
         return ORANGE_DOT
@@ -554,6 +556,8 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.limit_blocked and summary.processes:
         if summary.limit_reset_at:
+            if _limit_reset_available(summary):
+                return "Limit reset available"
             remaining = _format_time_remaining(summary.limit_reset_at)
             return f"Waiting for limit reset (in {remaining})"
         return "Waiting for limit reset"
@@ -583,6 +587,13 @@ def _format_time_remaining(target: datetime) -> str:
         parts.append(f"{hours}h")
     parts.append(f"{minutes}m")
     return " ".join(parts)
+
+
+def _limit_reset_available(summary: SessionSummary) -> bool:
+    if not summary.limit_reset_at:
+        return False
+    now = datetime.now(timezone.utc)
+    return summary.limit_reset_at <= now
 
 
 def main() -> None:
