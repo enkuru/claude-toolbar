@@ -128,6 +128,7 @@ class SessionSummary:
 class LimitInfo:
     timestamp: Optional[datetime]
     source: str
+    reached: bool = False
 
 
 @dataclass

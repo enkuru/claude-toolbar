@@ -287,16 +287,17 @@ class ClaudeToolbarApp(rumps.App):
         else:
             self.window_item.title = "No active 5h window today"
 
-        limit_ts = None
-        if window.active_end:
+        limit_ts = summary.limit_info.timestamp
+        prefix = "Limit reset"
+        if limit_ts is None and window.active_end:
             limit_ts = window.active_end
-        elif summary.limit_info.timestamp:
-            limit_ts = summary.limit_info.timestamp
+        elif summary.limit_info.timestamp is not None:
+            prefix = "Limit reached" if summary.limit_info.reached else "Limit reset"
 
         if limit_ts:
             ts_text = format_ts(limit_ts)
             rel = format_relative(limit_ts)
-            self.limit_item.title = f"Limit reset: {ts_text} ({rel})"
+            self.limit_item.title = f"{prefix}: {ts_text} ({rel})"
         else:
             self.limit_item.title = "Limit reset: unknown"
 

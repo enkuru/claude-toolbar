@@ -90,6 +90,7 @@ class UsageTracker:
         self._max_files_per_tick = FILES_PER_TICK
         self._initializing = True
         self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
+        self._last_limit_notice: Optional[datetime] = None
         self._load_snapshots()
         self._load_session_cache()
         if self.file_states:
@@ -418,10 +419,10 @@ class UsageTracker:
             if isinstance(usage, dict) and timestamp:
                 self._register_usage(session, usage, timestamp)
             self._handle_tool_use(session, message, timestamp)
-            if data.get("isApiErrorMessage") is True:
-                limit_ts = _extract_limit_timestamp(message, timestamp)
-                if limit_ts:
-                    self.limit_candidates.add(limit_ts)
+            limit_ts = _extract_limit_timestamp(message, timestamp)
+            if limit_ts:
+                self.limit_candidates.add(limit_ts)
+                self._last_limit_notice = limit_ts
 
         if data.get("type") == "user":
             self._handle_user_content(session, data.get("message"))
@@ -682,17 +683,39 @@ class UsageTracker:
     def _resolve_limit_info(self) -> LimitInfo:
         now = datetime.now(timezone.utc)
         if self.config.limit_reset_override:
-            return LimitInfo(timestamp=self.config.limit_reset_override, source="config override")
+            return LimitInfo(
+                timestamp=self.config.limit_reset_override,
+                source="config override",
+                reached=False,
+            )
 
-        candidates = [ts for ts in self.limit_candidates if ts is not None]
-        candidates.sort()
-        future_candidates = [ts for ts in candidates if ts >= now]
+        valid_candidates: List[datetime] = []
+        for ts in list(self.limit_candidates):
+            if ts is None:
+                continue
+            if ts < now - timedelta(hours=12):
+                self.limit_candidates.discard(ts)
+                continue
+            valid_candidates.append(ts)
+        valid_candidates.sort()
+        self.limit_candidates = set(valid_candidates)
+
+        if self._last_limit_notice and self._last_limit_notice < now - timedelta(hours=12):
+            self._last_limit_notice = None
+
+        future_candidates = [ts for ts in valid_candidates if ts >= now]
         if future_candidates:
-            return LimitInfo(timestamp=future_candidates[0], source="recent limit notice")
-        if candidates:
-            return LimitInfo(timestamp=candidates[-1], source="latest limit notice")
+            target = future_candidates[0]
+            reached = now < target
+            return LimitInfo(timestamp=target, source="recent limit notice", reached=reached)
+
+        if valid_candidates:
+            target = valid_candidates[-1]
+            reached = self._last_limit_notice is not None and now < target
+            return LimitInfo(timestamp=target, source="latest limit notice", reached=reached)
+
         fallback = _next_monthly_reset(now)
-        return LimitInfo(timestamp=fallback, source="assumed monthly reset")
+        return LimitInfo(timestamp=fallback, source="assumed monthly reset", reached=False)
 
 
 # ----------------------------------------------------------------------
