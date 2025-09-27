@@ -32,6 +32,7 @@ YELLOW_DOT = "🟡"
 WHITE_DOT = "⚪️"
 BLUE_DOT = "🔵"
 ORANGE_DOT = "🟠"
+RED_DOT = "🔴"
 MAX_SESSIONS = 20
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "claude_toolbar_icon.png"
 MIN_LOADING_DISPLAY_SECONDS = 0.8
@@ -301,6 +302,7 @@ class ClaudeToolbarApp(rumps.App):
         working = []
         waiting = []
         running = []
+        limited = []
         for summary in sessions:
             icon = _session_status_icon(summary, self.config.idle_seconds)
             if icon == ORANGE_DOT:
@@ -309,8 +311,10 @@ class ClaudeToolbarApp(rumps.App):
                 working.append(summary)
             elif icon == GREEN_DOT:
                 running.append(summary)
+            elif icon == RED_DOT:
+                limited.append(summary)
 
-        active = waiting + working + running
+        active = waiting + working + running + limited
         if len(active) == 1:
             first = active[0]
             icon = _session_status_icon(first, self.config.idle_seconds)
@@ -318,6 +322,8 @@ class ClaudeToolbarApp(rumps.App):
             self.title = f"{icon} {text}"
         elif active:
             parts: List[str] = []
+            if limited:
+                parts.append(f"{RED_DOT}{len(limited)}")
             if waiting:
                 parts.append(f"{ORANGE_DOT}{len(waiting)}")
             if working:
@@ -533,6 +539,8 @@ def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: f
 
 
 def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
+    if summary.limit_blocked and summary.processes:
+        return RED_DOT
     if summary.awaiting_approval or summary.awaiting_message:
         return ORANGE_DOT
     if summary.pending_tool_count and _session_is_recent(summary, idle_seconds, 2.0):
@@ -545,6 +553,10 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 
 
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
+    if summary.limit_blocked:
+        if summary.limit_reset_at:
+            return f"Waiting for limit reset ({format_relative(summary.limit_reset_at)})"
+        return "Waiting for limit reset"
     if summary.awaiting_approval or summary.awaiting_message:
         return "Awaiting approval"
     if summary.pending_tool_count:

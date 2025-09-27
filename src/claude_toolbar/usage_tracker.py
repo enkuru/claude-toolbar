@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from .config import ToolbarConfig
 from .models import (
@@ -418,6 +418,7 @@ class UsageTracker:
 
         session.last_event_type = data.get("type")
         message = data.get("message") if isinstance(data.get("message"), dict) else None
+        limit_detected = False
         if message:
             session.last_event_role = message.get("role")
             if message.get("model"):
@@ -426,21 +427,21 @@ class UsageTracker:
             if isinstance(usage, dict) and timestamp:
                 self._register_usage(session, usage, timestamp)
             self._handle_tool_use(session, message, timestamp)
-            limit_ts = _extract_limit_timestamp(message, timestamp)
-            if limit_ts:
+            limit_ts, limit_matched = _extract_limit_timestamp(message, timestamp)
+            if limit_matched and limit_ts:
                 self.limit_candidates.add(limit_ts)
                 self._last_limit_notice = timestamp
-                if any(
-                    isinstance(item, dict)
-                    and isinstance(item.get("text"), str)
-                    and "resets" in item["text"].lower()
-                    for item in message.get("content", [])
-                    if isinstance(item, dict)
-                ):
-                    self._limit_override = limit_ts
+                self._limit_override = limit_ts
+                session.limit_blocked = True
+                session.limit_reset_at = limit_ts
+                limit_detected = True
 
         if data.get("type") == "user":
             self._handle_user_content(session, data.get("message"))
+
+        if message and not limit_detected and session.limit_blocked:
+            session.limit_blocked = False
+            session.limit_reset_at = None
 
     def _register_usage(
         self, session: SessionState, usage: Dict[str, int], timestamp: datetime
@@ -796,10 +797,12 @@ def _as_text(value: object) -> str:
     return ""
 
 
-def _extract_limit_timestamp(message: Dict, reference: Optional[datetime] = None) -> Optional[datetime]:
+def _extract_limit_timestamp(
+    message: Dict, reference: Optional[datetime] = None
+) -> Tuple[Optional[datetime], bool]:
     content = message.get("content")
     if not isinstance(content, list):
-        return None
+        return None, False
 
     reference = reference or datetime.now(timezone.utc)
     duration_hint = timedelta(hours=5)
@@ -817,7 +820,7 @@ def _extract_limit_timestamp(message: Dict, reference: Optional[datetime] = None
                 try:
                     stamp = int(match.group(1))
                     if stamp > 0:
-                        return datetime.fromtimestamp(stamp, tz=timezone.utc)
+                        return datetime.fromtimestamp(stamp, tz=timezone.utc), True
                 except ValueError:
                     pass
         reset_match = re.search(r"resets\s+([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)", lower)
@@ -833,8 +836,8 @@ def _extract_limit_timestamp(message: Dict, reference: Optional[datetime] = None
             reset_local = local_ref.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if reset_local < local_ref:
                 reset_local = reset_local + timedelta(days=1)
-            return reset_local.astimezone(timezone.utc)
-    return reference + duration_hint
+            return reset_local.astimezone(timezone.utc), True
+    return None, False
 
 
 def _next_monthly_reset(reference: datetime) -> datetime:

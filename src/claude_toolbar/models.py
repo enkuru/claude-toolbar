@@ -83,6 +83,8 @@ class SessionState:
     last_event_role: Optional[str] = None
     processes: List[ProcessInfo] = field(default_factory=list)
     last_tool_name: Optional[str] = None
+    limit_blocked: bool = False
+    limit_reset_at: Optional[datetime] = None
 
     def clone_summary(self, status: SessionStatus) -> "SessionSummary":
         return SessionSummary(
@@ -104,6 +106,8 @@ class SessionState:
             file_path=self.file_path,
             awaiting_approval=self.awaiting_approval,
             pending_tool_count=len(self.pending_tools),
+            limit_blocked=self.limit_blocked,
+            limit_reset_at=self.limit_reset_at,
         )
 
 
@@ -122,6 +126,8 @@ class SessionSummary:
     file_path: Optional[str] = None
     awaiting_approval: bool = False
     pending_tool_count: int = 0
+    limit_blocked: bool = False
+    limit_reset_at: Optional[datetime] = None
 
 
 @dataclass

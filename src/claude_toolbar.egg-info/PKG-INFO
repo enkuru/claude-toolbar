@@ -22,7 +22,7 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 - **Limit reset hint** – uses any recorded "usage limit" messages when available, otherwise falls back to the first day of the next month; you can override the timestamp in the config file.
 - **5-hour window tracking** – calculates the current Claude Code 5h throttle window from session start times, even if you haven’t hit the limit message yet, and shows when the window ends.
 - **Cost estimates** – shells out to `ccusage` for per-session and per-day pricing so you see dollars alongside tokens (requires `ccusage` on your PATH).
-- **Session presence** – lists the most recent Claude sessions with status icons (`🟢` running, `🔵` running tools, `🟠` awaiting approval, `⚪️` idle) and relative last-activity times.
+- **Session presence** – lists the most recent Claude sessions with status icons (`🟢` running, `🔵` running tools, `🟠` awaiting approval, `🔴` waiting for limit reset, `⚪️` idle) and relative last-activity times.
 - **Approval awareness** – detects "This command requires approval" results inside the transcript so you can see which session is stuck.
 - **Process linkage** – optionally associates running `claude` CLI processes (via `psutil`) with each session and shows their PIDs in the details popup.
 - **Session control** – launch or resume a session in a managed PTY, inject follow-up commands (e.g. `/resume`), auto-approve waiting prompts, and schedule non-active sessions to restart later—all from the toolbar.
