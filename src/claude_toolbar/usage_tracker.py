@@ -82,7 +82,6 @@ class UsageTracker:
         self._dirty_snapshot = False
         self._last_snapshot_save = 0.0
         self._max_files_per_tick = FILES_PER_TICK
-        self._initial_passes_remaining = 3
         self._initializing = True
         self._load_snapshots()
         self._load_session_cache()
@@ -196,10 +195,6 @@ class UsageTracker:
             self._discover_files()
             self._last_scan = now
         limit = self._max_files_per_tick
-        if self._initial_passes_remaining > 0:
-            limit = max(self._max_files_per_tick, 800)
-            self._initial_passes_remaining -= 1
-            logger.debug("initial pass remaining=%s limit=%s", self._initial_passes_remaining, limit)
         processed = 0
         for path, state in list(self.file_states.items()):
             if processed >= limit:
@@ -315,7 +310,7 @@ class UsageTracker:
                 self.file_states.pop(path, None)
                 self._dirty_snapshot = True
         if not self.file_states:
-            self._initial_passes_remaining = 0
+            self._initializing = False
 
     def _process_file(self, state: FileState) -> None:
         try:
