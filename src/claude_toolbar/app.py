@@ -129,6 +129,9 @@ class ClaudeToolbarApp(rumps.App):
     def _render_menu(
         self, usage_summary: UsageSummary, sessions: List[SessionSummary]
     ) -> None:
+        if self.tracker.is_initializing():
+            self._render_loading_state()
+            return
         self.menu.clear()
 
         self._update_usage_section(usage_summary, sessions)
