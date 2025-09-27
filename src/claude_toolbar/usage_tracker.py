@@ -614,6 +614,10 @@ class UsageTracker:
         for session in self.sessions.values():
             if session.first_activity:
                 starts.append(session.first_activity)
+            if session.last_activity and (
+                not session.first_activity or session.last_activity > session.first_activity
+            ):
+                starts.append(session.last_activity)
         if not starts:
             return WindowInfo(duration=duration)
 
