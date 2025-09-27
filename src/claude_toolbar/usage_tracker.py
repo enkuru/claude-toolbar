@@ -501,9 +501,6 @@ class UsageTracker:
     def _refresh_ccusage_prices_blocking(self) -> None:
         if not self.config.enable_ccusage_prices:
             return
-        now_ts = time.time()
-        if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
-            return
         logger.debug("refreshing ccusage prices…")
         with self._ccusage_lock:
             now_ts = time.time()
@@ -515,58 +512,58 @@ class UsageTracker:
                     capture_output=True,
                     text=True,
                     timeout=30,
-            )
-            if session_proc.returncode == 0 and session_proc.stdout:
-                session_data = json.loads(session_proc.stdout)
-                sessions = session_data.get("sessions", [])
-                mapping: Dict[str, float] = {}
-                for item in sessions:
-                    key = str(item.get("sessionId"))
-                    if not key:
-                        continue
-                    mapping[key] = float(item.get("totalCost", 0.0))
-                self.session_costs = mapping
-                for session in self.sessions.values():
-                    if session.project in mapping:
-                        session.cost_usd = mapping[session.project]
+                )
+                if session_proc.returncode == 0 and session_proc.stdout:
+                    session_data = json.loads(session_proc.stdout)
+                    sessions = session_data.get("sessions", [])
+                    mapping: Dict[str, float] = {}
+                    for item in sessions:
+                        key = str(item.get("sessionId"))
+                        if not key:
+                            continue
+                        mapping[key] = float(item.get("totalCost", 0.0))
+                    self.session_costs = mapping
+                    for session in self.sessions.values():
+                        if session.project in mapping:
+                            session.cost_usd = mapping[session.project]
 
-            daily_proc = subprocess.run(
-                ["ccusage", "daily", "--json", "-O"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if daily_proc.returncode == 0 and daily_proc.stdout:
-                daily_data = json.loads(daily_proc.stdout)
-                daily_entries = daily_data.get("daily", [])
-                costs: Dict[str, float] = {}
-                totals_map: Dict[str, UsageTotals] = {}
-                for item in daily_entries:
-                    date_str = item.get("date")
-                    if not date_str:
-                        continue
-                    total_cost = float(item.get("totalCost", 0.0))
-                    costs[date_str] = total_cost
-                    totals = UsageTotals()
-                    totals.input_tokens = int(item.get("inputTokens", 0))
-                    totals.output_tokens = int(item.get("outputTokens", 0))
-                    totals.cache_creation_tokens = int(item.get("cacheCreationTokens", 0))
-                    totals.cache_read_tokens = int(item.get("cacheReadTokens", 0))
-                    totals_map[date_str] = totals
-                if totals_map:
-                    self.daily_totals.update(totals_map)
-                self.daily_costs = costs
+                daily_proc = subprocess.run(
+                    ["ccusage", "daily", "--json", "-O"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if daily_proc.returncode == 0 and daily_proc.stdout:
+                    daily_data = json.loads(daily_proc.stdout)
+                    daily_entries = daily_data.get("daily", [])
+                    costs: Dict[str, float] = {}
+                    totals_map: Dict[str, UsageTotals] = {}
+                    for item in daily_entries:
+                        date_str = item.get("date")
+                        if not date_str:
+                            continue
+                        total_cost = float(item.get("totalCost", 0.0))
+                        costs[date_str] = total_cost
+                        totals = UsageTotals()
+                        totals.input_tokens = int(item.get("inputTokens", 0))
+                        totals.output_tokens = int(item.get("outputTokens", 0))
+                        totals.cache_creation_tokens = int(item.get("cacheCreationTokens", 0))
+                        totals.cache_read_tokens = int(item.get("cacheReadTokens", 0))
+                        totals_map[date_str] = totals
+                    if totals_map:
+                        self.daily_totals.update(totals_map)
+                    self.daily_costs = costs
 
-            self._persist_session_cache()
-            self._last_price_refresh = now_ts
-            logger.debug(
-                "ccusage refresh complete: sessions=%s daily=%s",
-                len(self.session_costs),
-                len(self.daily_costs),
-            )
-        except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError):
-            logger.debug("ccusage refresh failed", exc_info=bool(DEBUG_MODE))
-            return
+                self._persist_session_cache()
+                self._last_price_refresh = time.time()
+                logger.debug(
+                    "ccusage refresh complete: sessions=%s daily=%s",
+                    len(self.session_costs),
+                    len(self.daily_costs),
+                )
+            except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+                logger.debug("ccusage refresh failed: %s", exc, exc_info=bool(DEBUG_MODE))
+                return
 
     def _determine_status(
         self, session: SessionState, now: datetime
