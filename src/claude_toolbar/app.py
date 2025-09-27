@@ -522,10 +522,6 @@ def _format_session_details(summary: SessionSummary) -> str:
 
 
 def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: float = 1.0) -> bool:
-    if summary.awaiting_approval or summary.awaiting_message:
-        return True
-    if summary.pending_tool_count:
-        return True
     if summary.processes:
         return True
     if summary.last_activity is None:
