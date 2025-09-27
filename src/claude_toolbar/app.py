@@ -84,6 +84,9 @@ class ClaudeToolbarApp(rumps.App):
         self._pending_usage_summary: Optional[UsageSummary] = None
         self._pending_sessions: Optional[List[SessionSummary]] = None
         self._loading_started_at = time.monotonic()
+        self._fast_refresh_timer: Optional[rumps.Timer] = None
+        self._in_fast_refresh = False
+        self._active_sessions_cache: List[str] = []
 
         self._render_loading_state()
 
@@ -107,6 +110,8 @@ class ClaudeToolbarApp(rumps.App):
             self._set_refresh_interval(min(self.config.refresh_interval, FAST_REFRESH_INTERVAL))
         else:
             self._set_refresh_interval(self.config.refresh_interval)
+            self._ensure_fast_refresh_timer()
+            self._ensure_fast_refresh_timer()
 
         usage_summary = self.tracker.get_usage_summary()
         raw_sessions = self.tracker.get_session_summaries()
@@ -127,6 +132,8 @@ class ClaudeToolbarApp(rumps.App):
         self._pending_usage_summary = None
         self._pending_sessions = None
         self._render_menu(usage_summary, sessions)
+        if not self._in_fast_refresh:
+            self._toggle_fast_refresh_timer(False)
 
     def _should_show_loading(self, sessions: Optional[List[SessionSummary]] = None) -> bool:
         if self.tracker.is_initializing():
@@ -236,6 +243,7 @@ class ClaudeToolbarApp(rumps.App):
         self.menu.add(rumps.separator)
 
         self._populate_sessions(sessions)
+        self._ensure_fast_refresh_timer()
 
         self.menu.add(rumps.separator)
         self.menu.add(self.refresh_item)
@@ -326,6 +334,8 @@ class ClaudeToolbarApp(rumps.App):
             message = "Loading sessions…" if self.tracker.is_initializing() else "No recent sessions"
             empty_item = rumps.MenuItem(message, callback=None)
             self.menu.add(empty_item)
+            self._active_sessions_cache = []
+            self._toggle_fast_refresh_timer(False)
             return
 
         limited = sessions[:MAX_SESSIONS]
@@ -333,9 +343,12 @@ class ClaudeToolbarApp(rumps.App):
             message = "Loading sessions…" if self.tracker.is_initializing() else "No recent sessions"
             empty_item = rumps.MenuItem(message, callback=None)
             self.menu.add(empty_item)
+            self._active_sessions_cache = []
+            self._toggle_fast_refresh_timer(False)
             return
 
         buckets = self._bucket_sessions(limited, self.config.idle_seconds)
+        active_ids: List[str] = []
         for bucket, entries in buckets:
             if not entries:
                 continue
@@ -347,6 +360,9 @@ class ClaudeToolbarApp(rumps.App):
                 item._session_id = summary.session_id  # type: ignore[attr-defined]
                 self.session_lookup[summary.session_id] = summary
                 self.menu.add(item)
+                if summary.processes:
+                    active_ids.append(summary.session_id)
+        self._active_sessions_cache = active_ids
 
 
     def _session_label(self, summary: SessionSummary) -> str:
@@ -408,6 +424,37 @@ class ClaudeToolbarApp(rumps.App):
             "No activity",
         ]
         return [(label, buckets[label]) for label in ordered_labels]
+
+    def _ensure_fast_refresh_timer(self) -> None:
+        if not self._active_sessions_cache or self.tracker.is_initializing():
+            self._toggle_fast_refresh_timer(False)
+            return
+        self._toggle_fast_refresh_timer(True)
+
+    def _toggle_fast_refresh_timer(self, enabled: bool) -> None:
+        if not enabled:
+            if self._fast_refresh_timer is not None:
+                self._fast_refresh_timer.stop()
+                self._fast_refresh_timer = None
+            return
+        if self._fast_refresh_timer is None:
+            self._fast_refresh_timer = rumps.Timer(self._fast_refresh_tick, 1.0)
+            self._fast_refresh_timer.start()
+
+    def _fast_refresh_tick(self, _):
+        if self.tracker.is_initializing() or not self._active_sessions_cache:
+            self._toggle_fast_refresh_timer(False)
+            return
+        self.tracker.refresh_active_processes(self._active_sessions_cache)
+        usage_summary = self.tracker.get_usage_summary()
+        grouped_sessions = self._group_sessions(self.tracker.get_session_summaries())
+        self._pending_usage_summary = usage_summary
+        self._pending_sessions = grouped_sessions
+        self._in_fast_refresh = True
+        try:
+            self._render_pending_menu()
+        finally:
+            self._in_fast_refresh = False
 
     # ------------------------------------------------------------------
     # Callbacks

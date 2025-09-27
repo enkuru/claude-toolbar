@@ -298,6 +298,12 @@ class UsageTracker:
             month_cost=month_cost,
         )
 
+    def refresh_active_processes(self, session_ids: Iterable[str]) -> None:
+        if not session_ids:
+            return
+        if self._process_monitor:
+            self._refresh_processes()
+
     def sessions_ready(self, session_ids: Iterable[str]) -> bool:
         for session_id in session_ids:
             state = self.sessions.get(session_id)
