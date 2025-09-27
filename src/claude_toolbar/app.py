@@ -306,9 +306,8 @@ class ClaudeToolbarApp(rumps.App):
         if len(active) == 1:
             first = active[0]
             icon = _session_status_icon(first, self.config.idle_seconds)
-            project = _pretty_project(first)
             text = _session_status_text(first, self.config.idle_seconds)
-            self.title = f"{icon} {project} ({text.lower()})"
+            self.title = f"{icon} {text}"
         elif active:
             parts: List[str] = []
             if waiting:
