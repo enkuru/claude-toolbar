@@ -428,10 +428,7 @@ class ClaudeToolbarApp(rumps.App):
         if not summary:
             return
         details = _format_session_details(summary)
-        can_schedule = summary.status not in (
-            SessionStatus.RUNNING,
-            SessionStatus.WAITING,
-        )
+        can_schedule = True
         if can_schedule:
             response = rumps.alert(
                 title="Claude Session",
