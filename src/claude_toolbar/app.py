@@ -304,7 +304,7 @@ class ClaudeToolbarApp(rumps.App):
         waiting = []
         running = []
         for summary in sessions:
-            icon = _session_status_icon(summary)
+            icon = _session_status_icon(summary, self.config.idle_seconds)
             if icon == ORANGE_DOT:
                 waiting.append(summary)
             elif icon == BLUE_DOT:
@@ -315,9 +315,9 @@ class ClaudeToolbarApp(rumps.App):
         active = waiting + working + running
         if len(active) == 1:
             first = active[0]
-            icon = _session_status_icon(first)
+            icon = _session_status_icon(first, self.config.idle_seconds)
             project = _pretty_project(first)
-            text = _session_status_text(first)
+            text = _session_status_text(first, self.config.idle_seconds)
             self.title = f"{icon} {project} ({text.lower()})"
         elif active:
             parts: List[str] = []
@@ -360,7 +360,7 @@ class ClaudeToolbarApp(rumps.App):
             self.menu.add(item)
 
     def _session_label(self, summary: SessionSummary) -> str:
-        emoji = _session_status_icon(summary)
+        emoji = _session_status_icon(summary, self.config.idle_seconds)
         tokens = format_tokens(summary.totals.total_tokens)
         relative = (
             format_relative(summary.last_activity)
@@ -369,7 +369,7 @@ class ClaudeToolbarApp(rumps.App):
         )
         project_display = _pretty_project(summary)
         cost_text = format_currency(summary.cost_usd) if summary.cost_usd else "$0.00"
-        status_text = _session_status_text(summary)
+        status_text = _session_status_text(summary, self.config.idle_seconds)
         return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {status_text} — {relative}"
 
     def _refresh_scheduled_jobs(self) -> List[ScheduledJob]:
@@ -654,27 +654,41 @@ def _format_session_details(summary: SessionSummary) -> str:
     )
 
 
-def _session_status_icon(summary: SessionSummary) -> str:
+def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: float = 1.0) -> bool:
+    if summary.last_activity is None:
+        return False
+    threshold = max(idle_seconds, 60) * max(multiplier, 1.0)
+    now = datetime.now(timezone.utc)
+    delta = now - summary.last_activity.astimezone(timezone.utc)
+    return delta.total_seconds() <= threshold
+
+
+def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.awaiting_approval or summary.awaiting_message:
-        return ORANGE_DOT
-    if summary.pending_tool_count:
+        if _session_is_recent(summary, idle_seconds, 3.0):
+            return ORANGE_DOT
+    if summary.pending_tool_count and _session_is_recent(summary, idle_seconds, 2.0):
         return BLUE_DOT
-    if summary.status == SessionStatus.RUNNING:
+    if summary.status == SessionStatus.RUNNING and _session_is_recent(summary, idle_seconds, 1.0):
         return GREEN_DOT
-    if summary.status == SessionStatus.WAITING:
+    if summary.status == SessionStatus.WAITING and _session_is_recent(summary, idle_seconds, 1.0):
         return YELLOW_DOT
     return WHITE_DOT
 
 
-def _session_status_text(summary: SessionSummary) -> str:
+def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.awaiting_approval or summary.awaiting_message:
-        return "Awaiting approval"
+        if _session_is_recent(summary, idle_seconds, 3.0):
+            return "Awaiting approval"
+        return "Idle"
     if summary.pending_tool_count:
-        count = summary.pending_tool_count
-        return "Running tool" if count == 1 else f"Running {count} tools"
-    if summary.status == SessionStatus.RUNNING:
+        if _session_is_recent(summary, idle_seconds, 2.0):
+            count = summary.pending_tool_count
+            return "Running tool" if count == 1 else f"Running {count} tools"
+        return "Idle"
+    if summary.status == SessionStatus.RUNNING and _session_is_recent(summary, idle_seconds, 1.0):
         return "Running"
-    if summary.status == SessionStatus.WAITING:
+    if summary.status == SessionStatus.WAITING and _session_is_recent(summary, idle_seconds, 1.0):
         return "Waiting"
     return "Idle"
 
