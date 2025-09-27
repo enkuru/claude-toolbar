@@ -272,13 +272,6 @@ class ClaudeToolbarApp(rumps.App):
             f"This month: {format_tokens(summary.month.total_tokens)} tokens ({format_currency(summary.month_cost)})"
         )
 
-        if summary.limit_info.timestamp:
-            ts_text = format_ts(summary.limit_info.timestamp)
-            rel = format_relative(summary.limit_info.timestamp)
-            self.limit_item.title = f"Limit reset: {ts_text} ({rel})"
-        else:
-            self.limit_item.title = "Limit reset: unknown"
-
         window = summary.window_info
         if window.active_start and window.active_end:
             start_text = format_ts(window.active_start)
@@ -291,6 +284,19 @@ class ClaudeToolbarApp(rumps.App):
             self.window_item.title = f"No active 5h window (last ended {end_text}, {since})"
         else:
             self.window_item.title = "No active 5h window today"
+
+        limit_ts = None
+        if window.active_end:
+            limit_ts = window.active_end
+        elif summary.limit_info.timestamp:
+            limit_ts = summary.limit_info.timestamp
+
+        if limit_ts:
+            ts_text = format_ts(limit_ts)
+            rel = format_relative(limit_ts)
+            self.limit_item.title = f"Limit reset: {ts_text} ({rel})"
+        else:
+            self.limit_item.title = "Limit reset: unknown"
 
         active_sessions = [
             summary

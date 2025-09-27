@@ -6,6 +6,8 @@ src/claude_toolbar/config.py
 src/claude_toolbar/models.py
 src/claude_toolbar/paths.py
 src/claude_toolbar/process_monitor.py
+src/claude_toolbar/pty_manager.py
+src/claude_toolbar/scheduler.py
 src/claude_toolbar/usage_tracker.py
 src/claude_toolbar/utils.py
 src/claude_toolbar.egg-info/PKG-INFO

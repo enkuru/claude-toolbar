@@ -86,10 +86,12 @@ class UsageTracker:
         self._last_snapshot_save = 0.0
         self._max_files_per_tick = FILES_PER_TICK
         self._initializing = True
+        self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
         self._load_snapshots()
         self._load_session_cache()
         if self.file_states:
             self._initializing = len(self.sessions) == 0
+        self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
         logger.debug(
             "UsageTracker initialized: sessions=%s, files=%s, initializing=%s",
             len(self.sessions),
@@ -127,6 +129,9 @@ class UsageTracker:
             )
             session.cost_usd = float(payload.get("cost_usd", 0.0))
             self.sessions[session_id] = session
+            if session.last_activity:
+                history = self._activity_history.setdefault(session_id, [])
+                history.append(session.last_activity)
         if self.sessions:
             logger.debug("Loaded %s sessions from cache", len(self.sessions))
     def _load_snapshots(self) -> None:
@@ -395,6 +400,7 @@ class UsageTracker:
                 session.first_activity = timestamp
             if session.last_activity is None or timestamp > session.last_activity:
                 session.last_activity = timestamp
+            self._record_activity(session_id, timestamp)
 
         if data.get("cwd"):
             session.cwd = data.get("cwd")
@@ -468,6 +474,15 @@ class UsageTracker:
             elif not is_error:
                 session.awaiting_approval = False
                 session.awaiting_message = None
+
+    def _record_activity(self, session_id: str, timestamp: datetime) -> None:
+        history = self._activity_history.setdefault(session_id, [])
+        history.append(timestamp)
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=max(self.config.session_duration_hours * 2, 6)
+        )
+        while history and history[0] < cutoff:
+            history.pop(0)
 
     def _refresh_processes(self) -> None:
         assert self._process_monitor is not None
@@ -610,42 +625,48 @@ class UsageTracker:
 
     def _compute_window_info(self) -> WindowInfo:
         duration = timedelta(hours=max(self.config.session_duration_hours, 1))
-        starts: list[datetime] = []
-        for session in self.sessions.values():
-            if session.first_activity:
-                starts.append(session.first_activity)
-            if session.last_activity and (
-                not session.first_activity or session.last_activity > session.first_activity
-            ):
-                starts.append(session.last_activity)
-        if not starts:
-            return WindowInfo(duration=duration)
-
-        starts.sort()
-        windows: list[tuple[datetime, datetime]] = []
-        window_start = starts[0]
-        window_end = window_start + duration
-        for start in starts[1:]:
-            if start <= window_end:
-                continue
-            windows.append((window_start, window_end))
-            window_start = start
-            window_end = start + duration
-        windows.append((window_start, window_end))
-
         now = datetime.now(timezone.utc)
+        cutoff = now - duration
+
+        recent_events: List[datetime] = []
+        all_events: List[datetime] = []
+
+        for session_id, history in self._activity_history.items():
+            if not history:
+                continue
+            for ts in history:
+                if ts is None:
+                    continue
+                all_events.append(ts)
+                if ts >= cutoff:
+                    recent_events.append(ts)
+
+        if not all_events:
+            for session in self.sessions.values():
+                if session.last_activity:
+                    all_events.append(session.last_activity)
+                    if session.last_activity >= cutoff:
+                        recent_events.append(session.last_activity)
+                elif session.first_activity and session.first_activity >= cutoff:
+                    recent_events.append(session.first_activity)
+
         active_start = None
         active_end = None
         last_start = None
         last_end = None
 
-        for start, end in windows:
-            if start <= now < end:
-                active_start = start
-                active_end = end
-            if end <= now and (last_end is None or end > last_end):
-                last_start = start
-                last_end = end
+        if recent_events:
+            recent_events.sort()
+            active_start = recent_events[0]
+            active_end = active_start + duration
+
+        if all_events:
+            all_events.sort()
+            last_start = all_events[-1]
+            last_end = last_start + duration
+            if active_start is None and last_start >= cutoff and now < last_end:
+                active_start = last_start
+                active_end = last_end
 
         return WindowInfo(
             active_start=active_start,
