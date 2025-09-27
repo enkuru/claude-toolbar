@@ -102,6 +102,8 @@ class SessionState:
             processes=list(self.processes),
             cost_usd=self.cost_usd,
             file_path=self.file_path,
+            awaiting_approval=self.awaiting_approval,
+            pending_tool_count=len(self.pending_tools),
         )
 
 
@@ -118,6 +120,8 @@ class SessionSummary:
     processes: List[ProcessInfo] = field(default_factory=list)
     cost_usd: float = 0.0
     file_path: Optional[str] = None
+    awaiting_approval: bool = False
+    pending_tool_count: int = 0
 
 
 @dataclass

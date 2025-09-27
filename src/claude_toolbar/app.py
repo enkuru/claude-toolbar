@@ -32,6 +32,8 @@ STATUS_EMOJI = {
 GREEN_DOT = "🟢"
 YELLOW_DOT = "🟡"
 WHITE_DOT = "⚪️"
+BLUE_DOT = "🔵"
+ORANGE_DOT = "🟠"
 MAX_SESSIONS = 20
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "claude_toolbar_icon.png"
 MIN_LOADING_DISPLAY_SECONDS = 0.8
@@ -298,25 +300,33 @@ class ClaudeToolbarApp(rumps.App):
         else:
             self.limit_item.title = "Limit reset: unknown"
 
-        active_sessions = [
-            summary
-            for summary in sessions
-            if summary.status in (SessionStatus.RUNNING, SessionStatus.WAITING)
-        ]
+        working = []
+        waiting = []
+        running = []
+        for summary in sessions:
+            icon = _session_status_icon(summary)
+            if icon == ORANGE_DOT:
+                waiting.append(summary)
+            elif icon == BLUE_DOT:
+                working.append(summary)
+            elif icon == GREEN_DOT:
+                running.append(summary)
 
-        if len(active_sessions) == 1:
-            first = active_sessions[0]
-            status_span = STATUS_EMOJI.get(first.status, WHITE_DOT)
+        active = waiting + working + running
+        if len(active) == 1:
+            first = active[0]
+            icon = _session_status_icon(first)
             project = _pretty_project(first)
-            self.title = f"{status_span} {project}"
-        elif len(active_sessions) > 1:
-            running_count = sum(1 for s in active_sessions if s.status == SessionStatus.RUNNING)
-            waiting_count = len(active_sessions) - running_count
+            text = _session_status_text(first)
+            self.title = f"{icon} {project} ({text.lower()})"
+        elif active:
             parts: List[str] = []
-            if running_count:
-                parts.append(f"{GREEN_DOT}{running_count}")
-            if waiting_count:
-                parts.append(f"{YELLOW_DOT}{waiting_count}")
+            if waiting:
+                parts.append(f"{ORANGE_DOT}{len(waiting)}")
+            if working:
+                parts.append(f"{BLUE_DOT}{len(working)}")
+            if running:
+                parts.append(f"{GREEN_DOT}{len(running)}")
             self.title = " ".join(parts)
         else:
             self.title = ""
@@ -350,7 +360,7 @@ class ClaudeToolbarApp(rumps.App):
             self.menu.add(item)
 
     def _session_label(self, summary: SessionSummary) -> str:
-        emoji = STATUS_EMOJI.get(summary.status, "•")
+        emoji = _session_status_icon(summary)
         tokens = format_tokens(summary.totals.total_tokens)
         relative = (
             format_relative(summary.last_activity)
@@ -359,7 +369,8 @@ class ClaudeToolbarApp(rumps.App):
         )
         project_display = _pretty_project(summary)
         cost_text = format_currency(summary.cost_usd) if summary.cost_usd else "$0.00"
-        return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {relative}"
+        status_text = _session_status_text(summary)
+        return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {status_text} — {relative}"
 
     def _refresh_scheduled_jobs(self) -> List[ScheduledJob]:
         jobs = sorted(self.scheduler.list_jobs(), key=lambda job: job.run_at)
@@ -641,6 +652,31 @@ def _format_session_details(summary: SessionSummary) -> str:
         f"Processes: {processes_text}\n"
         f"Waiting message: {awaiting}"
     )
+
+
+def _session_status_icon(summary: SessionSummary) -> str:
+    if summary.awaiting_approval or summary.awaiting_message:
+        return ORANGE_DOT
+    if summary.pending_tool_count:
+        return BLUE_DOT
+    if summary.status == SessionStatus.RUNNING:
+        return GREEN_DOT
+    if summary.status == SessionStatus.WAITING:
+        return YELLOW_DOT
+    return WHITE_DOT
+
+
+def _session_status_text(summary: SessionSummary) -> str:
+    if summary.awaiting_approval or summary.awaiting_message:
+        return "Awaiting approval"
+    if summary.pending_tool_count:
+        count = summary.pending_tool_count
+        return "Running tool" if count == 1 else f"Running {count} tools"
+    if summary.status == SessionStatus.RUNNING:
+        return "Running"
+    if summary.status == SessionStatus.WAITING:
+        return "Waiting"
+    return "Idle"
 
 
 def main() -> None:
