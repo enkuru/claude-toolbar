@@ -665,8 +665,7 @@ def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: f
 
 def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.awaiting_approval or summary.awaiting_message:
-        if _session_is_recent(summary, idle_seconds, 3.0):
-            return ORANGE_DOT
+        return ORANGE_DOT
     if summary.pending_tool_count and _session_is_recent(summary, idle_seconds, 2.0):
         return BLUE_DOT
     if summary.status == SessionStatus.RUNNING and _session_is_recent(summary, idle_seconds, 1.0):
@@ -678,9 +677,7 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.awaiting_approval or summary.awaiting_message:
-        if _session_is_recent(summary, idle_seconds, 3.0):
-            return "Awaiting approval"
-        return "Idle"
+        return "Awaiting approval"
     if summary.pending_tool_count:
         if _session_is_recent(summary, idle_seconds, 2.0):
             count = summary.pending_tool_count

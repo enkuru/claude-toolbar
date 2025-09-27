@@ -37,6 +37,9 @@ APPROVAL_PATTERNS = [
     "requires manual approval",
     "requires permission",
     "needs permission",
+    "do you want to proceed",
+    "enter your selection",
+    "choose an option",
 ]
 
 SCAN_INTERVAL_SECONDS = 30.0
@@ -468,7 +471,7 @@ class UsageTracker:
                 session.pending_tools.pop(tool_id, None)
             text_blob = item.get("content")
             is_error = bool(item.get("is_error"))
-            if is_error and _looks_like_approval_request(text_blob):
+            if _looks_like_approval_request(text_blob):
                 session.awaiting_approval = True
                 session.awaiting_message = _as_text(text_blob)
             elif not is_error:
