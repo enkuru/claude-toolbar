@@ -294,8 +294,8 @@ class ClaudeToolbarApp(rumps.App):
 
         if limit_ts:
             ts_text = format_ts(limit_ts)
-            rel = format_relative(limit_ts)
-            self.limit_item.title = f"{prefix}: {ts_text} ({rel})"
+            rel = _format_time_remaining(limit_ts)
+            self.limit_item.title = f"{prefix}: {ts_text} (in {rel})"
         else:
             self.limit_item.title = "Limit reset: unknown"
 
@@ -555,7 +555,8 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.limit_blocked and summary.processes:
         if summary.limit_reset_at:
-            return f"Waiting for limit reset ({format_relative(summary.limit_reset_at)})"
+            remaining = _format_time_remaining(summary.limit_reset_at)
+            return f"Waiting for limit reset (in {remaining})"
         return "Waiting for limit reset"
     if summary.awaiting_approval or summary.awaiting_message:
         return "Awaiting approval"
@@ -569,6 +570,20 @@ def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
     if summary.status == SessionStatus.WAITING and _session_is_recent(summary, idle_seconds, 1.0):
         return "Waiting"
     return "Idle"
+
+
+def _format_time_remaining(target: datetime) -> str:
+    now = datetime.now(timezone.utc)
+    delta_seconds = int((target - now).total_seconds())
+    if delta_seconds <= 0:
+        return "0m"
+    hours, remainder = divmod(delta_seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    parts: List[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
 
 
 def main() -> None:
