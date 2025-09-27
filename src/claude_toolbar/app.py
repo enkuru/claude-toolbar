@@ -335,7 +335,7 @@ class ClaudeToolbarApp(rumps.App):
             self.menu.add(empty_item)
             return
 
-        buckets = self._bucket_sessions(limited)
+        buckets = self._bucket_sessions(limited, self.config.idle_seconds)
         for bucket, entries in buckets:
             if not entries:
                 continue
@@ -363,7 +363,7 @@ class ClaudeToolbarApp(rumps.App):
         return f"{emoji} {project_display} — {tokens} tokens / {cost_text} — {status_text} — {relative}"
 
     def _bucket_sessions(
-        self, sessions: List[SessionSummary]
+        self, sessions: List[SessionSummary], idle_seconds: int
     ) -> List[tuple[str, List[SessionSummary]]]:
         now_local = datetime.now().astimezone()
         today = now_local.date()
@@ -377,6 +377,10 @@ class ClaudeToolbarApp(rumps.App):
         }
 
         for summary in sessions:
+            if _session_is_recent(summary, idle_seconds, 1.0):
+                buckets["Today"].append(summary)
+                continue
+
             last_activity = summary.last_activity
             if last_activity is None:
                 buckets["No activity"].append(summary)
