@@ -553,7 +553,7 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 
 
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
-    if summary.limit_blocked:
+    if summary.limit_blocked and summary.processes:
         if summary.limit_reset_at:
             return f"Waiting for limit reset ({format_relative(summary.limit_reset_at)})"
         return "Waiting for limit reset"
