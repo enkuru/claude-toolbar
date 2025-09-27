@@ -447,7 +447,7 @@ class ClaudeToolbarApp(rumps.App):
                 cancel="Send Command…",
             )
 
-        if response == 1:
+        if response == 0:
             self._prompt_send_command(summary)
         elif response == 2 and can_schedule:
             self._prompt_schedule_run(summary)
