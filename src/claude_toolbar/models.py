@@ -101,6 +101,7 @@ class SessionState:
             awaiting_message=self.awaiting_message,
             processes=list(self.processes),
             cost_usd=self.cost_usd,
+            file_path=self.file_path,
         )
 
 
@@ -116,6 +117,7 @@ class SessionSummary:
     awaiting_message: Optional[str]
     processes: List[ProcessInfo] = field(default_factory=list)
     cost_usd: float = 0.0
+    file_path: Optional[str] = None
 
 
 @dataclass

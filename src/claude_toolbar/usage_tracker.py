@@ -41,7 +41,9 @@ APPROVAL_PATTERNS = [
 
 SCAN_INTERVAL_SECONDS = 30.0
 
-FILES_PER_TICK = 40
+FILES_PER_TICK = 50
+INITIAL_FILES_PER_TICK = 100
+SECOND_PASS_FILES_PER_TICK = 200
 SNAPSHOT_SAVE_INTERVAL = 5.0
 SNAPSHOT_PATH = Path.home() / ".config" / "claude_toolbar" / "session_snapshot.json"
 SESSION_CACHE_PATH = Path.home() / ".config" / "claude_toolbar" / "session_cache.json"
@@ -63,6 +65,7 @@ class FileState:
     position: int = 0
     size: int = 0
     session_id_hint: Optional[str] = None
+    scanned_initially: bool = False
 
 
 class UsageTracker:
@@ -195,6 +198,11 @@ class UsageTracker:
             self._discover_files()
             self._last_scan = now
         limit = self._max_files_per_tick
+        if self._initializing and self.file_states:
+            if not any(state.scanned_initially for state in self.file_states.values()):
+                limit = max(limit, min(INITIAL_FILES_PER_TICK, len(self.file_states)))
+            else:
+                limit = max(limit, min(SECOND_PASS_FILES_PER_TICK, len(self.file_states)))
         processed = 0
         for path, state in list(self.file_states.items()):
             if processed >= limit:
@@ -204,8 +212,13 @@ class UsageTracker:
             processed += 1
         if self._process_monitor:
             self._refresh_processes()
-        if self.sessions and self._initializing:
-            self._initializing = False
+        if self._initializing:
+            if not self.file_states:
+                self._initializing = False
+            else:
+                all_scanned = all(state.scanned_initially for state in self.file_states.values())
+                if all_scanned:
+                    self._initializing = False
         if self._dirty_snapshot and time.time() - self._last_snapshot_save > SNAPSHOT_SAVE_INTERVAL:
             self._persist_snapshots()
             self._persist_session_cache()
@@ -276,6 +289,20 @@ class UsageTracker:
             month_cost=month_cost,
         )
 
+    def sessions_ready(self, session_ids: Iterable[str]) -> bool:
+        for session_id in session_ids:
+            state = self.sessions.get(session_id)
+            if state is None:
+                continue
+            if state.file_path:
+                path = Path(state.file_path)
+                file_state = self.file_states.get(path)
+                if file_state is not None and not file_state.scanned_initially:
+                    return False
+            if state.last_activity is None and not state.totals.total_tokens:
+                return False
+        return True
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -345,6 +372,8 @@ class UsageTracker:
 
         state.size = current_stat.st_size
         self._dirty_snapshot = True
+        if not state.scanned_initially:
+            state.scanned_initially = True
 
     def _process_entry(self, state: FileState, data: Dict) -> None:
         session_id = data.get("sessionId") or state.session_id_hint or state.path.stem

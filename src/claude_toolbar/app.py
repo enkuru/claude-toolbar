@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -31,6 +32,9 @@ YELLOW_DOT = "🟡"
 WHITE_DOT = "⚪️"
 MAX_SESSIONS = 20
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "claude_toolbar_icon.png"
+MIN_LOADING_DISPLAY_SECONDS = 0.8
+MAX_LOADING_DISPLAY_SECONDS = 6.0
+FAST_REFRESH_INTERVAL = 0.5
 
 
 def _summary_sort_key(summary: SessionSummary) -> tuple[int, float]:
@@ -70,10 +74,19 @@ class ClaudeToolbarApp(rumps.App):
 
         self.menu = []
         self.session_lookup: Dict[str, SessionSummary] = {}
+        self.loading_sessions_item = rumps.MenuItem("Loading sessions…", callback=None)
+
+        self._loading_frames = ["⏳ Claude", "⌛ Claude"]
+        self._loading_frame_index = 0
+        self._loading_anim_timer: Optional[rumps.Timer] = None
+        self._pending_usage_summary: Optional[UsageSummary] = None
+        self._pending_sessions: Optional[List[SessionSummary]] = None
+        self._loading_started_at = time.monotonic()
 
         self._render_loading_state()
 
-        self.refresh_timer = rumps.Timer(self.refresh_timer_tick, self.config.refresh_interval)
+        self._refresh_interval = self.config.refresh_interval
+        self.refresh_timer = rumps.Timer(self.refresh_timer_tick, self._refresh_interval)
         self.refresh_timer.start()
         self._initial_timer = rumps.Timer(self._initial_refresh, 0.1)
         self._initial_timer.start()
@@ -82,26 +95,103 @@ class ClaudeToolbarApp(rumps.App):
     # Menu rendering
     # ------------------------------------------------------------------
     def refresh_timer_tick(self, _):
-        if self.tracker.is_initializing():
-            self._render_loading_state()
+        if self._loading_anim_timer is not None or self.tracker.is_initializing():
+            if self._should_show_loading():
+                self._render_loading_state()
+
         self.tracker.update()
+
+        if self.tracker.is_initializing() or self._should_show_loading():
+            self._set_refresh_interval(min(self.config.refresh_interval, FAST_REFRESH_INTERVAL))
+        else:
+            self._set_refresh_interval(self.config.refresh_interval)
+
         usage_summary = self.tracker.get_usage_summary()
         raw_sessions = self.tracker.get_session_summaries()
         grouped_sessions = self._group_sessions(raw_sessions)
-        self._render_menu(usage_summary, grouped_sessions)
+
+        self._pending_usage_summary = usage_summary
+        self._pending_sessions = grouped_sessions
+
+        if self._should_show_loading(grouped_sessions):
+            return
+
+        self._stop_loading_animation()
+        self._render_pending_menu()
+
+    def _render_pending_menu(self) -> None:
+        usage_summary = self._pending_usage_summary or self.tracker.get_usage_summary()
+        sessions = self._pending_sessions or self._group_sessions(self.tracker.get_session_summaries())
+        self._pending_usage_summary = None
+        self._pending_sessions = None
+        self._render_menu(usage_summary, sessions)
+
+    def _should_show_loading(self, sessions: Optional[List[SessionSummary]] = None) -> bool:
+        if self.tracker.is_initializing():
+            return True
+        elapsed = time.monotonic() - self._loading_started_at
+        if elapsed < MIN_LOADING_DISPLAY_SECONDS:
+            return True
+        if sessions is None:
+            sessions = self._pending_sessions
+        ready = True
+        if sessions:
+            visible = sessions[:MAX_SESSIONS]
+            ready = self.tracker.sessions_ready(summary.session_id for summary in visible)
+        if not ready:
+            return elapsed < MAX_LOADING_DISPLAY_SECONDS
+        return False
+
+    def _start_loading_animation(self) -> None:
+        if self._loading_anim_timer is None:
+            self._loading_frame_index = 0
+            self._loading_started_at = time.monotonic()
+            self._loading_anim_timer = rumps.Timer(self._tick_loading_animation, 0.35)
+            self._loading_anim_timer.start()
+        self._update_loading_titles()
+
+    def _stop_loading_animation(self) -> None:
+        if self._loading_anim_timer is not None:
+            self._loading_anim_timer.stop()
+            self._loading_anim_timer = None
+
+    def _set_refresh_interval(self, interval: float) -> None:
+        if abs(interval - self._refresh_interval) < 1e-6:
+            return
+        self._refresh_interval = interval
+        self.refresh_timer.stop()
+        self.refresh_timer.interval = interval
+        self.refresh_timer.start()
+
+    def _tick_loading_animation(self, _):
+        if not self._should_show_loading():
+            self._stop_loading_animation()
+            self._render_pending_menu()
+            return
+        self._loading_frame_index = (self._loading_frame_index + 1) % len(self._loading_frames)
+        self._update_loading_titles()
+
+    def _update_loading_titles(self) -> None:
+        suffix = self._loading_suffix()
+        self.title = self._loading_frames[self._loading_frame_index]
+        self.usage_today_item.title = f"Today: loading{suffix}"
+        self.usage_week_item.title = f"Last 7 days: loading{suffix}"
+        self.usage_month_item.title = f"This month: loading{suffix}"
+        self.limit_item.title = f"Limit reset: loading{suffix}"
+        self.window_item.title = f"Loading session data{suffix}"
+        self.loading_sessions_item.title = f"Loading sessions{suffix}"
+
+    def _loading_suffix(self) -> str:
+        dots = (self._loading_frame_index % 3) + 1
+        return "." * dots
 
     def _initial_refresh(self, timer: rumps.Timer) -> None:
         timer.stop()
         self.refresh_timer_tick(None)
 
     def _render_loading_state(self) -> None:
-        self.title = "⏳"
-        self.usage_today_item.title = "Today: loading…"
-        self.usage_week_item.title = "Last 7 days: loading…"
-        self.usage_month_item.title = "This month: loading…"
-        self.limit_item.title = "Limit reset: loading…"
-        self.window_item.title = "Loading session data…"
-
+        self._start_loading_animation()
+        self._update_loading_titles()
         self.menu.clear()
         self.menu.add(self.usage_today_item)
         self.menu.add(self.usage_week_item)
@@ -110,7 +200,7 @@ class ClaudeToolbarApp(rumps.App):
         self.menu.add(self.limit_item)
         self.menu.add(self.window_item)
         self.menu.add(rumps.separator)
-        self.menu.add(rumps.MenuItem("Loading sessions…", callback=None))
+        self.menu.add(self.loading_sessions_item)
         self.menu.add(rumps.separator)
         self.menu.add(self.refresh_item)
         self.menu.add(self.open_config_item)
@@ -245,6 +335,10 @@ class ClaudeToolbarApp(rumps.App):
     # Callbacks
     # ------------------------------------------------------------------
     def refresh_now(self, _):
+        self._stop_loading_animation()
+        self._pending_usage_summary = None
+        self._pending_sessions = None
+        self._render_loading_state()
         self.refresh_timer_tick(None)
 
     def open_config(self, _):
