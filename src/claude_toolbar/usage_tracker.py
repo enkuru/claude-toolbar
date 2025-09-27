@@ -91,6 +91,7 @@ class UsageTracker:
         self._initializing = True
         self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
         self._last_limit_notice: Optional[datetime] = None
+        self._limit_override: Optional[datetime] = None
         self._load_snapshots()
         self._load_session_cache()
         if self.file_states:
@@ -428,7 +429,15 @@ class UsageTracker:
             limit_ts = _extract_limit_timestamp(message, timestamp)
             if limit_ts:
                 self.limit_candidates.add(limit_ts)
-                self._last_limit_notice = limit_ts
+                self._last_limit_notice = timestamp
+                if any(
+                    isinstance(item, dict)
+                    and isinstance(item.get("text"), str)
+                    and "resets" in item["text"].lower()
+                    for item in message.get("content", [])
+                    if isinstance(item, dict)
+                ):
+                    self._limit_override = limit_ts
 
         if data.get("type") == "user":
             self._handle_user_content(session, data.get("message"))
@@ -688,6 +697,11 @@ class UsageTracker:
 
     def _resolve_limit_info(self) -> LimitInfo:
         now = datetime.now(timezone.utc)
+        if self._limit_override and now > self._limit_override + timedelta(hours=6):
+            self._limit_override = None
+        if self._limit_override is not None:
+            reached = now < self._limit_override
+            return LimitInfo(timestamp=self._limit_override, source="limit notice", reached=reached)
         if self.config.limit_reset_override:
             return LimitInfo(
                 timestamp=self.config.limit_reset_override,
@@ -712,12 +726,12 @@ class UsageTracker:
         future_candidates = [ts for ts in valid_candidates if ts >= now]
         if future_candidates:
             target = future_candidates[0]
-            reached = now < target
+            reached = self._last_limit_notice is not None and self._last_limit_notice <= now
             return LimitInfo(timestamp=target, source="recent limit notice", reached=reached)
 
         if valid_candidates:
             target = valid_candidates[-1]
-            reached = self._last_limit_notice is not None and now < target
+            reached = self._last_limit_notice is not None and self._last_limit_notice <= now
             return LimitInfo(timestamp=target, source="latest limit notice", reached=reached)
 
         fallback = _next_monthly_reset(now)
