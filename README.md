@@ -11,6 +11,7 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 - **Session presence** – lists the most recent Claude sessions with status icons (`🟢` running, `⚪️` idle, `🟡` waiting on approval) and relative last-activity times.
 - **Approval awareness** – detects "This command requires approval" results inside the transcript so you can see which session is stuck.
 - **Process linkage** – optionally associates running `claude` CLI processes (via `psutil`) with each session and shows their PIDs in the details popup.
+- **Session control** – launch or resume a session in a managed PTY, inject follow-up commands (e.g. `/resume`), auto-approve waiting prompts, and schedule non-active sessions to restart later—all from the toolbar.
 
 ## Installation
 
@@ -52,7 +53,8 @@ Configuration lives at `~/.config/claude_toolbar/config.json`. All fields are op
   "enable_process_monitor": true,
   "ccusage_refresh_interval": 120,
   "enable_ccusage_prices": true,
-  "limit_reset_override": "2025-10-01T00:00:00+00:00"
+  "limit_reset_override": "2025-10-01T00:00:00+00:00",
+  "launch_command": ["claude", "code"]
 }
 ```
 
@@ -65,6 +67,7 @@ Configuration lives at `~/.config/claude_toolbar/config.json`. All fields are op
 - `ccusage_refresh_interval`: Seconds between reusing `ccusage` output (defaults to 120).
 - `enable_ccusage_prices`: Disable if you do not have `ccusage` installed or don’t want dollar estimates.
 - `limit_reset_override`: Optional ISO timestamp to use when the CLI has not logged a reset hint (or when you want to correct it manually).
+- `launch_command`: Command array used to start a PTY-managed Claude session. Use `{session_id}`, `{project}`, `{project_name}`, or `{project_path}` placeholders if you need to inject context-specific flags.
 
 After editing the configuration you can select **Refresh Now** from the menu or restart the app to reload it.
 
@@ -77,7 +80,12 @@ Clicking any session entry reveals:
 - Any queued approval/error message (e.g. "This command requires approval")
 - The associated `claude` process IDs if the process monitor is enabled
 
-Inactive (older) sessions are automatically ordered to the bottom; only the 15 most recent entries are shown to keep the menu tidy.
+Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. Idle sessions also offer **Send Command…** and **Schedule Run…** actions:
+
+- **Send Command…** launches the PTY manager (if needed) and injects the text you enter. Optional auto-approval automatically answers waiting prompts with the numeric choice you specify.
+- **Schedule Run…** queues a session to relaunch after a delay. Scheduled items appear in the menu so you can cancel or fire them early.
+
+When auto-approval is enabled the toolbar watches the transcript and sends the configured choice (default `1`) whenever the session is waiting for approval.
 
 ## Notes & Limitations
 
