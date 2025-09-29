@@ -101,6 +101,8 @@ To ship a reusable macOS app bundle and disk image:
 2. Run `scripts/build_dmg.sh` to invoke `py2app` and bundle assets.
 3. Grab the resulting `dist/Claude Toolbar.app` or distribute `dist/claude-toolbar.dmg` (drag the app bundle to `/Applications`).
 
+Prefer a simple zip instead of a DMG? Run `scripts/build_zip.sh` to produce both the `.app` bundle and `dist/claude-toolbar.zip`.
+
 The generated bundle respects the launch-at-login toggle—enable it from **Preferences…** after first launch if you want the toolbar to bootstrap with macOS.
 
 ## Notes & Limitations
