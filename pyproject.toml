@@ -14,10 +14,22 @@ dependencies = [
   "rumps>=0.4",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"claude_toolbar" = ["assets/*"]
+
 [project.optional-dependencies]
 dev = [
   "black>=24.1",
   "ruff>=0.3",
+]
+mac = [
+  "py2app>=0.28",
 ]
 
 [project.scripts]

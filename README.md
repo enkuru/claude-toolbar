@@ -12,6 +12,7 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 - **Approval awareness** – detects "This command requires approval" results inside the transcript so you can see which session is stuck.
 - **Process linkage** – optionally associates running `claude` CLI processes (via `psutil`) with each session and shows their PIDs in the details popup.
 - **Session control** – launch or resume a session in a managed PTY, inject follow-up commands (e.g. `/resume`), auto-approve waiting prompts, and schedule non-active sessions to restart later—all from the toolbar.
+- **Preferences modal** – edit refresh cadence, history windows, claude paths, launch-at-login, and visibility toggles directly from the toolbar without touching JSON.
 
 ## Installation
 
@@ -70,6 +71,17 @@ Configuration lives at `~/.config/claude_toolbar/config.json`. All fields are op
 
 After editing the configuration you can select **Refresh Now** from the menu or restart the app to reload it.
 
+## Preferences window
+
+On macOS you can click **Preferences…** in the toolbar menu to open a dedicated window for all settings. The dialog lets you:
+
+- Toggle token and cost columns, process monitoring, ccusage price lookups, and launch-at-login.
+- Adjust refresh cadence, idle timeout, history retention, throttle window length, ccusage cache interval, and max sessions shown.
+- Supply an ISO-8601 limit-reset override timestamp.
+- Provide explicit Claude transcript paths (one per line) without hand-editing JSON.
+
+When AppKit is unavailable (e.g. running headless), the menu item falls back to opening the config directory so you can edit the JSON file manually.
+
 ## Session details popup
 
 Clicking any session entry reveals:
@@ -80,6 +92,16 @@ Clicking any session entry reveals:
 - The associated `claude` process IDs if the process monitor is enabled
 
 Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. When Claude asks for approval, the session row turns orange so you can quickly jump back to the terminal.
+
+## macOS app bundle / DMG build
+
+To ship a reusable macOS app bundle and disk image:
+
+1. Install the optional packaging dependency: `pip install -e .[mac]`.
+2. Run `scripts/build_dmg.sh` to invoke `py2app` and bundle assets.
+3. Grab the resulting `dist/Claude Toolbar.app` or distribute `dist/claude-toolbar.dmg` (drag the app bundle to `/Applications`).
+
+The generated bundle respects the launch-at-login toggle—enable it from **Preferences…** after first launch if you want the toolbar to bootstrap with macOS.
 
 ## Notes & Limitations
 

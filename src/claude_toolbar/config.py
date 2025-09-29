@@ -24,6 +24,10 @@ DEFAULT_CONFIG = {
     "ccusage_refresh_interval": 120,
     "enable_ccusage_prices": True,
     "limit_reset_override": None,
+    "show_costs": True,
+    "show_tokens": True,
+    "max_sessions": 20,
+    "launch_at_login": False,
 }
 
 
@@ -38,6 +42,10 @@ class ToolbarConfig:
     ccusage_refresh_interval: int = DEFAULT_CONFIG["ccusage_refresh_interval"]
     enable_ccusage_prices: bool = DEFAULT_CONFIG["enable_ccusage_prices"]
     limit_reset_override: Optional[datetime] = None
+    show_costs: bool = DEFAULT_CONFIG["show_costs"]
+    show_tokens: bool = DEFAULT_CONFIG["show_tokens"]
+    max_sessions: int = DEFAULT_CONFIG["max_sessions"]
+    launch_at_login: bool = DEFAULT_CONFIG["launch_at_login"]
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ToolbarConfig":
@@ -64,6 +72,12 @@ class ToolbarConfig:
         )
         override_raw = data.get("limit_reset_override")
         limit_reset_override = _parse_datetime(override_raw) if override_raw else None
+        show_costs = bool(data.get("show_costs", DEFAULT_CONFIG["show_costs"]))
+        show_tokens = bool(data.get("show_tokens", DEFAULT_CONFIG["show_tokens"]))
+        max_sessions = int(data.get("max_sessions", DEFAULT_CONFIG["max_sessions"]))
+        launch_at_login = bool(
+            data.get("launch_at_login", DEFAULT_CONFIG["launch_at_login"])
+        )
 
         return cls(
             claude_paths=paths,
@@ -75,6 +89,10 @@ class ToolbarConfig:
             ccusage_refresh_interval=ccusage_refresh_interval,
             enable_ccusage_prices=enable_ccusage_prices,
             limit_reset_override=limit_reset_override,
+            show_costs=show_costs,
+            show_tokens=show_tokens,
+            max_sessions=max(1, max_sessions),
+            launch_at_login=launch_at_login,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -90,6 +108,10 @@ class ToolbarConfig:
             "limit_reset_override": self.limit_reset_override.isoformat()
             if self.limit_reset_override
             else None,
+            "show_costs": self.show_costs,
+            "show_tokens": self.show_tokens,
+            "max_sessions": self.max_sessions,
+            "launch_at_login": self.launch_at_login,
         }
 
 
