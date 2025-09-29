@@ -866,3 +866,7 @@ def main() -> None:
 
 
 __all__ = ["main", "ClaudeToolbarApp"]
+
+
+if __name__ == "__main__":  # pragma: no cover - script entrypoint
+    main()
