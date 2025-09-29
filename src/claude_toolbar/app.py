@@ -15,23 +15,48 @@ except ImportError:  # pragma: no cover - macOS only integration
     AppKit = None
     NSBundle = None
 
-from .config import CONFIG_PATH, ToolbarConfig, load_config, save_config
-from .models import (
-    SessionStatus,
-    SessionSummary,
-    UsageSummary,
-    UsageTotals,
-    WindowInfo,
-)
-from .paths import discover_claude_paths
-from .preferences import PreferencesController
-from .startup import (
-    disable_launch_agent,
-    enable_launch_agent,
-    is_launch_agent_enabled,
-)
-from .usage_tracker import UsageTracker
-from .utils import format_currency, format_relative, format_tokens, format_ts
+if __package__ in (None, ""):
+    # Handle execution as a top-level script inside the py2app bundle.
+    from claude_toolbar.config import CONFIG_PATH, ToolbarConfig, load_config, save_config
+    from claude_toolbar.models import (
+        SessionStatus,
+        SessionSummary,
+        UsageSummary,
+        UsageTotals,
+        WindowInfo,
+    )
+    from claude_toolbar.paths import discover_claude_paths
+    from claude_toolbar.preferences import PreferencesController
+    from claude_toolbar.startup import (
+        disable_launch_agent,
+        enable_launch_agent,
+        is_launch_agent_enabled,
+    )
+    from claude_toolbar.usage_tracker import UsageTracker
+    from claude_toolbar.utils import (
+        format_currency,
+        format_relative,
+        format_tokens,
+        format_ts,
+    )
+else:
+    from .config import CONFIG_PATH, ToolbarConfig, load_config, save_config
+    from .models import (
+        SessionStatus,
+        SessionSummary,
+        UsageSummary,
+        UsageTotals,
+        WindowInfo,
+    )
+    from .paths import discover_claude_paths
+    from .preferences import PreferencesController
+    from .startup import (
+        disable_launch_agent,
+        enable_launch_agent,
+        is_launch_agent_enabled,
+    )
+    from .usage_tracker import UsageTracker
+    from .utils import format_currency, format_relative, format_tokens, format_ts
 
 STATUS_EMOJI = {
     SessionStatus.RUNNING: "🟢",
