@@ -26,17 +26,10 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 
 2. (Optional) Create a config file at `~/.config/claude_toolbar/config.json` if you want to tweak paths, refresh interval, or override the limit reset timestamp. The defaults typically work out of the box.
 
-3. Start the toolbar:
+3. Launch the menubar app (two ways):
 
-   ```bash
-   claude-toolbar
-   ```
-
-   or run directly via:
-
-   ```bash
-   python -m claude_toolbar.app
-   ```
+   - **CLI flow** – install editable and run `claude-toolbar` (or `python -m claude_toolbar.app`). Keep the terminal open; the app adds an icon to the macOS menu bar.
+   - **Bundle flow** – if you prefer a standalone `.app`, follow the packaging steps below to create a DMG/zip and run the bundled launcher.
 
 The menu bar title displays `Claude <tokens today>` so you can keep an eye on burn without opening the drop-down.
 
@@ -102,6 +95,10 @@ To ship a reusable macOS app bundle and disk image:
 3. Grab the resulting `dist/Claude Toolbar.app` or distribute `dist/claude-toolbar.dmg` (drag the app bundle to `/Applications`).
 
 Prefer a simple zip instead of a DMG? Run `scripts/build_zip.sh` to produce both the `.app` bundle and `dist/claude-toolbar.zip`.
+
+### Running the bundle
+
+Double-click `dist/Claude Toolbar.app` (or mount `dist/claude-toolbar.dmg` and launch it). The process runs headless as a menu bar item—look for `🟢 Claude …` near the clock. Quit from the dropdown when finished.
 
 The generated bundle respects the launch-at-login toggle—enable it from **Preferences…** after first launch if you want the toolbar to bootstrap with macOS.
 
