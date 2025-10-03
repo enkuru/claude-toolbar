@@ -571,8 +571,8 @@ class UsageTracker:
         last_month_cost = last_month_cost or 0.0
         all_time_cost = all_time_cost or 0.0
 
-        limit_info = self._resolve_limit_info()
         window_info = self._compute_window_info()
+        limit_info = self._resolve_limit_info(window_info)
 
         return UsageSummary(
             today=today_totals,
@@ -1188,13 +1188,18 @@ class UsageTracker:
             duration=duration,
         )
 
-    def _resolve_limit_info(self) -> LimitInfo:
+    def _resolve_limit_info(self, window: WindowInfo) -> LimitInfo:
         now = datetime.now(timezone.utc)
-        if self._limit_override and now > self._limit_override + timedelta(hours=6):
+        duration = window.duration or timedelta(hours=max(self.config.session_duration_hours, 1))
+
+        if self._limit_override and now > self._limit_override + duration:
+            self._limit_override = None
+        if self._limit_override and self._limit_override > now + duration:
             self._limit_override = None
         if self._limit_override is not None:
             reached = now < self._limit_override
             return LimitInfo(timestamp=self._limit_override, source="limit notice", reached=reached)
+
         if self.config.limit_reset_override:
             return LimitInfo(
                 timestamp=self.config.limit_reset_override,
@@ -1202,33 +1207,56 @@ class UsageTracker:
                 reached=False,
             )
 
+        has_recent_limit = False
+        if self._last_limit_notice and now - self._last_limit_notice <= duration:
+            has_recent_limit = True
+
+        has_recent_session = False
+        if window.active_start and window.active_end and window.active_end >= now:
+            has_recent_session = True
+        elif window.last_start and now - window.last_start <= duration:
+            has_recent_session = True
+
         valid_candidates: List[datetime] = []
+        updated_candidates: set[datetime] = set()
         for ts in list(self.limit_candidates):
             if ts is None:
                 continue
-            if ts < now - timedelta(hours=12):
-                self.limit_candidates.discard(ts)
+            if ts < now - duration or ts > now + duration:
                 continue
             valid_candidates.append(ts)
+            updated_candidates.add(ts)
         valid_candidates.sort()
-        self.limit_candidates = set(valid_candidates)
+        self.limit_candidates = updated_candidates
 
-        if self._last_limit_notice and self._last_limit_notice < now - timedelta(hours=12):
-            self._last_limit_notice = None
-
+        candidate = None
+        source = "limit notice"
         future_candidates = [ts for ts in valid_candidates if ts >= now]
         if future_candidates:
-            target = future_candidates[0]
-            reached = self._last_limit_notice is not None and self._last_limit_notice <= now
-            return LimitInfo(timestamp=target, source="recent limit notice", reached=reached)
+            candidate = future_candidates[0]
+        elif valid_candidates:
+            candidate = valid_candidates[-1]
+            source = "recent limit notice"
 
-        if valid_candidates:
-            target = valid_candidates[-1]
-            reached = self._last_limit_notice is not None and self._last_limit_notice <= now
-            return LimitInfo(timestamp=target, source="latest limit notice", reached=reached)
+        if candidate is not None:
+            reached = has_recent_limit and candidate >= now
+            return LimitInfo(timestamp=candidate, source=source, reached=reached)
 
-        fallback = _next_monthly_reset(now)
-        return LimitInfo(timestamp=fallback, source="assumed monthly reset", reached=False)
+        window_candidate = None
+        window_source = "active window"
+        if window.active_start and window.active_end and window.active_end >= now:
+            window_candidate = window.active_end
+        elif window.last_start and window.last_end and now - window.last_start <= duration:
+            window_candidate = window.last_end
+            window_source = "recent session"
+
+        if window_candidate is not None:
+            return LimitInfo(timestamp=window_candidate, source=window_source, reached=False)
+
+        if has_recent_limit or has_recent_session:
+            return LimitInfo(timestamp=None, source="unknown", reached=has_recent_limit)
+
+        return LimitInfo(timestamp=None, source="inactive", reached=False)
 
 
 # ----------------------------------------------------------------------
@@ -1330,15 +1358,5 @@ def _extract_limit_timestamp(
                 reset_local = reset_local + timedelta(days=1)
             return reset_local.astimezone(timezone.utc), True
     return None, False
-
-
-def _next_monthly_reset(reference: datetime) -> datetime:
-    local = reference.astimezone()
-    if local.month == 12:
-        target = local.replace(year=local.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-    else:
-        target = local.replace(month=local.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
-    return target.astimezone(timezone.utc)
-
 
 __all__ = ["UsageTracker"]
