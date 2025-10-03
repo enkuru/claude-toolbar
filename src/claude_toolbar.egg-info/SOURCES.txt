@@ -1,11 +1,14 @@
 README.md
 pyproject.toml
+setup.py
 src/claude_toolbar/__init__.py
 src/claude_toolbar/app.py
 src/claude_toolbar/config.py
 src/claude_toolbar/models.py
 src/claude_toolbar/paths.py
+src/claude_toolbar/preferences.py
 src/claude_toolbar/process_monitor.py
+src/claude_toolbar/startup.py
 src/claude_toolbar/usage_tracker.py
 src/claude_toolbar/utils.py
 src/claude_toolbar.egg-info/PKG-INFO
@@ -14,3 +17,6 @@ src/claude_toolbar.egg-info/dependency_links.txt
 src/claude_toolbar.egg-info/entry_points.txt
 src/claude_toolbar.egg-info/requires.txt
 src/claude_toolbar.egg-info/top_level.txt
+src/claude_toolbar/assets/claude_toolbar_icon.png
+src/jaraco/__init__.py
+src/jaraco/text/__init__.py

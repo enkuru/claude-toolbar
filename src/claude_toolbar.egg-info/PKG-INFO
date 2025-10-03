@@ -10,6 +10,8 @@ Requires-Dist: rumps>=0.4
 Provides-Extra: dev
 Requires-Dist: black>=24.1; extra == "dev"
 Requires-Dist: ruff>=0.3; extra == "dev"
+Provides-Extra: mac
+Requires-Dist: py2app>=0.28; extra == "mac"
 
 # Claude Toolbar
 
@@ -25,6 +27,7 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 - **Approval awareness** – detects "This command requires approval" results inside the transcript so you can see which session is stuck.
 - **Process linkage** – optionally associates running `claude` CLI processes (via `psutil`) with each session and shows their PIDs in the details popup.
 - **Session control** – launch or resume a session in a managed PTY, inject follow-up commands (e.g. `/resume`), auto-approve waiting prompts, and schedule non-active sessions to restart later—all from the toolbar.
+- **Preferences modal** – edit refresh cadence, history windows, claude paths, launch-at-login, and visibility toggles directly from the toolbar without touching JSON.
 
 ## Installation
 
@@ -38,17 +41,10 @@ A lightweight macOS menu bar utility that surfaces Claude Code usage metrics and
 
 2. (Optional) Create a config file at `~/.config/claude_toolbar/config.json` if you want to tweak paths, refresh interval, or override the limit reset timestamp. The defaults typically work out of the box.
 
-3. Start the toolbar:
+3. Launch the menubar app (two ways):
 
-   ```bash
-   claude-toolbar
-   ```
-
-   or run directly via:
-
-   ```bash
-   python -m claude_toolbar.app
-   ```
+   - **CLI flow** – install editable and run `claude-toolbar` (or `python -m claude_toolbar.app`). Keep the terminal open; the app adds an icon to the macOS menu bar.
+   - **Bundle flow** – if you prefer a standalone `.app`, follow the packaging steps below to create a DMG/zip and run the bundled launcher.
 
 The menu bar title displays `Claude <tokens today>` so you can keep an eye on burn without opening the drop-down.
 
@@ -83,6 +79,17 @@ Configuration lives at `~/.config/claude_toolbar/config.json`. All fields are op
 
 After editing the configuration you can select **Refresh Now** from the menu or restart the app to reload it.
 
+## Preferences window
+
+On macOS you can click **Preferences…** in the toolbar menu to open a dedicated window for all settings. The dialog lets you:
+
+- Toggle token and cost columns, process monitoring, ccusage price lookups, and launch-at-login.
+- Adjust refresh cadence, idle timeout, history retention, throttle window length, ccusage cache interval, and max sessions shown.
+- Supply an ISO-8601 limit-reset override timestamp.
+- Provide explicit Claude transcript paths (one per line) without hand-editing JSON.
+
+When AppKit is unavailable (e.g. running headless), the menu item falls back to opening the config directory so you can edit the JSON file manually.
+
 ## Session details popup
 
 Clicking any session entry reveals:
@@ -93,6 +100,22 @@ Clicking any session entry reveals:
 - The associated `claude` process IDs if the process monitor is enabled
 
 Inactive (older) sessions are automatically ordered to the bottom; only the 20 most recent entries are shown to keep the menu tidy. When Claude asks for approval, the session row turns orange so you can quickly jump back to the terminal.
+
+## macOS app bundle / DMG build
+
+To ship a reusable macOS app bundle and disk image:
+
+1. Install the optional packaging dependency: `pip install -e .[mac]`.
+2. Run `scripts/build_dmg.sh` to invoke `py2app` and bundle assets.
+3. Grab the resulting `dist/Claude Toolbar.app` or distribute `dist/claude-toolbar.dmg` (drag the app bundle to `/Applications`).
+
+Prefer a simple zip instead of a DMG? Run `scripts/build_zip.sh` to produce both the `.app` bundle and `dist/claude-toolbar.zip`.
+
+### Running the bundle
+
+Double-click `dist/Claude Toolbar.app` (or mount `dist/claude-toolbar.dmg` and launch it). The process runs headless as a menu bar item—look for `🟢 Claude …` near the clock. Quit from the dropdown when finished.
+
+The generated bundle respects the launch-at-login toggle—enable it from **Preferences…** after first launch if you want the toolbar to bootstrap with macOS.
 
 ## Notes & Limitations
 

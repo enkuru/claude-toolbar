@@ -73,6 +73,7 @@ RED_DOT = "🔴"
 ICON_TODAY = "🟢"
 ICON_WEEK = "🗓️"
 ICON_MONTH = "📆"
+ICON_ALL_TIME = "♾️"
 ICON_LIMIT_OK = "✅"
 ICON_LIMIT_WAIT = "⏳"
 ICON_LIMIT_BLOCKED = "🚫"
@@ -141,6 +142,7 @@ class ClaudeToolbarApp(rumps.App):
         self.usage_today_item = rumps.MenuItem("Today: …")
         self.usage_week_item = rumps.MenuItem("Last 7 days: …")
         self.usage_month_item = rumps.MenuItem("This month: …")
+        self.usage_all_item = rumps.MenuItem("All time: …")
         self.limit_header_item = rumps.MenuItem("🚦 Limits", callback=None)
         self.limit_item = rumps.MenuItem("Limit reset: …")
         self.window_item = rumps.MenuItem("5h window: —")
@@ -272,6 +274,7 @@ class ClaudeToolbarApp(rumps.App):
         self.usage_today_item.title = f"Today: loading{suffix}"
         self.usage_week_item.title = f"Last 7 days: loading{suffix}"
         self.usage_month_item.title = f"This month: loading{suffix}"
+        self.usage_all_item.title = f"All time: loading{suffix}"
         self.limit_item.title = f"Limit reset: loading{suffix}"
         self.window_item.title = f"Loading session data{suffix}"
         self.loading_sessions_item.title = f"Loading sessions{suffix}"
@@ -292,6 +295,7 @@ class ClaudeToolbarApp(rumps.App):
         self.menu.add(self.usage_today_item)
         self.menu.add(self.usage_week_item)
         self.menu.add(self.usage_month_item)
+        self.menu.add(self.usage_all_item)
         self.menu.add(rumps.separator)
         self.menu.add(self.limit_header_item)
         self.menu.add(self.limit_item)
@@ -326,6 +330,7 @@ class ClaudeToolbarApp(rumps.App):
         self.menu.add(self.usage_today_item)
         self.menu.add(self.usage_week_item)
         self.menu.add(self.usage_month_item)
+        self.menu.add(self.usage_all_item)
         self.menu.add(rumps.separator)
         self.menu.add(self.limit_header_item)
         self.menu.add(self.limit_item)
@@ -349,6 +354,7 @@ class ClaudeToolbarApp(rumps.App):
             self.usage_today_item.title = "Today: loading…"
             self.usage_week_item.title = "Last 7 days: loading…"
             self.usage_month_item.title = "This month: loading…"
+            self.usage_all_item.title = "All time: loading…"
             self.limit_item.title = "Limit reset: loading…"
             self.window_item.title = "Loading session data…"
             self.title = "⏳"
@@ -372,6 +378,13 @@ class ClaudeToolbarApp(rumps.App):
             "This month",
             summary.month,
             summary.month_cost,
+        )
+        self._set_usage_item(
+            self.usage_all_item,
+            ICON_ALL_TIME,
+            "All time",
+            summary.all_time,
+            summary.all_time_cost,
         )
 
         window = summary.window_info
@@ -790,8 +803,24 @@ def _session_is_recent(summary: SessionSummary, idle_seconds: int, multiplier: f
     return delta.total_seconds() <= threshold
 
 
+
+def _session_limit_waiting(summary: SessionSummary, idle_seconds: int) -> bool:
+    if not summary.limit_blocked:
+        return False
+    if summary.processes:
+        return True
+    if summary.pending_tool_count and _session_is_recent(summary, idle_seconds, 2.0):
+        return True
+    if (
+        summary.awaiting_approval or summary.awaiting_message
+    ) and _session_is_recent(summary, idle_seconds, 1.0):
+        return True
+    if summary.status != SessionStatus.IDLE and _session_is_recent(summary, idle_seconds, 1.0):
+        return True
+    return False
+
 def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
-    if summary.limit_blocked and summary.processes:
+    if _session_limit_waiting(summary, idle_seconds):
         if _limit_reset_available(summary):
             return ORANGE_DOT
         return RED_DOT
@@ -807,7 +836,7 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
 
 
 def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
-    if summary.limit_blocked and summary.processes:
+    if _session_limit_waiting(summary, idle_seconds):
         if summary.limit_reset_at:
             if _limit_reset_available(summary):
                 return "Limit reset available"
