@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
     "enable_process_monitor": True,
     "ccusage_refresh_interval": 120,
     "enable_ccusage_prices": True,
+    "ccusage_path": None,
     "limit_reset_override": None,
     "show_costs": True,
     "show_tokens": True,
@@ -41,6 +42,7 @@ class ToolbarConfig:
     enable_process_monitor: bool = DEFAULT_CONFIG["enable_process_monitor"]
     ccusage_refresh_interval: int = DEFAULT_CONFIG["ccusage_refresh_interval"]
     enable_ccusage_prices: bool = DEFAULT_CONFIG["enable_ccusage_prices"]
+    ccusage_path: Optional[Path] = None
     limit_reset_override: Optional[datetime] = None
     show_costs: bool = DEFAULT_CONFIG["show_costs"]
     show_tokens: bool = DEFAULT_CONFIG["show_tokens"]
@@ -70,6 +72,8 @@ class ToolbarConfig:
         enable_ccusage_prices = bool(
             data.get("enable_ccusage_prices", DEFAULT_CONFIG["enable_ccusage_prices"])
         )
+        ccusage_path_raw = data.get("ccusage_path")
+        ccusage_path = Path(ccusage_path_raw).expanduser() if isinstance(ccusage_path_raw, str) else None
         override_raw = data.get("limit_reset_override")
         limit_reset_override = _parse_datetime(override_raw) if override_raw else None
         show_costs = bool(data.get("show_costs", DEFAULT_CONFIG["show_costs"]))
@@ -88,6 +92,7 @@ class ToolbarConfig:
             enable_process_monitor=enable_process_monitor,
             ccusage_refresh_interval=ccusage_refresh_interval,
             enable_ccusage_prices=enable_ccusage_prices,
+            ccusage_path=ccusage_path,
             limit_reset_override=limit_reset_override,
             show_costs=show_costs,
             show_tokens=show_tokens,
@@ -105,6 +110,7 @@ class ToolbarConfig:
             "enable_process_monitor": self.enable_process_monitor,
             "ccusage_refresh_interval": self.ccusage_refresh_interval,
             "enable_ccusage_prices": self.enable_ccusage_prices,
+            "ccusage_path": str(self.ccusage_path) if self.ccusage_path else None,
             "limit_reset_override": self.limit_reset_override.isoformat()
             if self.limit_reset_override
             else None,
