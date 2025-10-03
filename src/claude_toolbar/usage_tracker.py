@@ -29,213 +29,6 @@ from .paths import PROJECTS_SUBDIR
 from .process_monitor import ProcessMonitor
 from .utils import parse_timestamp, to_local
 
-
-def _normalize_daily_key(raw_key: Optional[str]) -> Optional[str]:
-    """Convert ccusage daily report keys to YYYY-MM-DD strings."""
-    if not raw_key:
-        return None
-    key = raw_key.strip()
-    if not key:
-        return None
-    if MONTH_PATTERN.fullmatch(key):
-        try:
-            month_start = date.fromisoformat(f"{key}-01")
-        except ValueError:
-            return None
-        return month_start.strftime("%Y-%m-%d")
-    try:
-        day = date.fromisoformat(key)
-    except ValueError:
-        iso_value = key
-        if iso_value.endswith("Z"):
-            iso_value = iso_value[:-1] + "+00:00"
-        try:
-            dt = datetime.fromisoformat(iso_value)
-        except ValueError:
-            parsed = parse_timestamp(key)
-            if parsed is None:
-                return None
-            dt = parsed
-        if isinstance(dt, datetime):
-            return dt.date().strftime("%Y-%m-%d")
-        return None
-    return day.strftime("%Y-%m-%d")
-
-
-@dataclass
-class AggregatedUsage:
-    totals: UsageTotals
-    cost: float = 0.0
-
-
-def _safe_float(value: object) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        cleaned = value.strip().replace("$", "").replace(",", "")
-        try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
-    return 0.0
-
-
-def _safe_int(entry: Dict[str, object], *keys: str) -> int:
-    for key in keys:
-        if key in entry and entry[key] is not None:
-            value = entry[key]
-            if isinstance(value, (int, float)):
-                return int(value)
-            if isinstance(value, str):
-                cleaned = value.strip().replace(",", "")
-                try:
-                    return int(float(cleaned))
-                except ValueError:
-                    continue
-    return 0
-
-
-def _usage_totals_from_entry(entry: Dict[str, object]) -> UsageTotals:
-    totals = UsageTotals()
-    totals.input_tokens = _safe_int(entry, "inputTokens", "input")
-    totals.output_tokens = _safe_int(entry, "outputTokens", "output")
-    totals.cache_creation_tokens = _safe_int(
-        entry, "cacheCreationTokens", "cacheCreation"
-    )
-    totals.cache_read_tokens = _safe_int(entry, "cacheReadTokens", "cacheRead")
-    if totals.total_tokens == 0:
-        total_tokens = _safe_int(entry, "totalTokens", "tokens")
-        if total_tokens:
-            totals.input_tokens = total_tokens
-    return totals
-
-
-def _clone_totals(totals: UsageTotals) -> UsageTotals:
-    return UsageTotals(
-        input_tokens=totals.input_tokens,
-        output_tokens=totals.output_tokens,
-        cache_creation_tokens=totals.cache_creation_tokens,
-        cache_read_tokens=totals.cache_read_tokens,
-    )
-
-
-def _extract_entry_date(entry: Dict[str, object], candidate_keys: List[str]) -> Optional[date]:
-    for key in candidate_keys:
-        value = entry.get(key)
-        normalized = _normalize_daily_key(value)
-        if normalized:
-            try:
-                return date.fromisoformat(normalized)
-            except ValueError:
-                continue
-    return None
-
-
-def _extract_period(entry: Dict[str, object]) -> tuple[Optional[date], Optional[date]]:
-    start = _extract_entry_date(
-        entry,
-        [
-            "start",
-            "startDate",
-            "rangeStart",
-            "periodStart",
-            "weekStart",
-            "week",
-            "monthStart",
-        ],
-    )
-    end = _extract_entry_date(
-        entry,
-        [
-            "end",
-            "endDate",
-            "rangeEnd",
-            "periodEnd",
-            "weekEnd",
-            "monthEnd",
-        ],
-    )
-    month_key = entry.get("month")
-    if start and not end:
-        if isinstance(month_key, str) or entry.get("monthStart"):
-            last_day = calendar.monthrange(start.year, start.month)[1]
-            end = date(start.year, start.month, last_day)
-        elif entry.get("week") or entry.get("weekStart") or entry.get("weekEnd"):
-            end = start + timedelta(days=6)
-    if end and not start:
-        start = end
-    if start and end and end < start:
-        start, end = end, start
-    return start, end
-
-MONTH_PATTERN = re.compile(r"(\d{4}-\d{2})")
-
-
-def _extract_month_key(entry: Dict[str, object]) -> Optional[str]:
-    for key in (
-        "month",
-        "monthStart",
-        "period",
-        "label",
-        "name",
-    ):
-        value = entry.get(key)
-        if isinstance(value, str):
-            match = MONTH_PATTERN.search(value)
-            if match:
-                return match.group(1)
-    return None
-
-
-def _entry_covers_date(entry: Dict[str, object], target: date) -> bool:
-    start, end = _extract_period(entry)
-    if start and end:
-        return start <= target <= end
-    if start:
-        return start <= target
-    if end:
-        return target <= end
-    month_key = _extract_month_key(entry)
-    if month_key:
-        try:
-            month_start = date.fromisoformat(f"{month_key}-01")
-        except ValueError:
-            return False
-        last_day = calendar.monthrange(month_start.year, month_start.month)[1]
-        month_end = date(month_start.year, month_start.month, last_day)
-        return month_start <= target <= month_end
-    return False
-
-
-def _pick_latest_entry(entries: List[Dict[str, object]]) -> Optional[Dict[str, object]]:
-    if not entries:
-        return None
-    best_entry = None
-    best_end: Optional[date] = None
-    for entry in entries:
-        end_date = _extract_entry_date(
-            entry,
-            [
-                "end",
-                "endDate",
-                "rangeEnd",
-                "periodEnd",
-                "weekEnd",
-                "monthEnd",
-                "date",
-            ],
-        )
-        if end_date is None:
-            end_date = _extract_entry_date(
-                entry,
-                ["start", "startDate", "rangeStart", "periodStart", "weekStart", "week", "monthStart"]
-            )
-        if end_date is None:
-            continue
-        if best_end is None or end_date > best_end:
-            best_end = end_date
-            best_entry = entry
-    return best_entry or entries[0]
 APPROVAL_PATTERNS = [
     "requires approval",
     "awaiting approval",
@@ -268,8 +61,6 @@ if not logger.handlers:
 logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 
 
-import calendar
-
 @dataclass
 class FileState:
     path: Path
@@ -301,7 +92,6 @@ class UsageTracker:
         self._activity_history: Dict[str, List[datetime]] = defaultdict(list)
         self._last_limit_notice: Optional[datetime] = None
         self._limit_override: Optional[datetime] = None
-        self._ccusage_rollups: Dict[str, AggregatedUsage] = {}
         self._load_snapshots()
         self._load_session_cache()
         if self.file_states:
@@ -347,8 +137,6 @@ class UsageTracker:
                 history.append(session.last_activity)
         if self.sessions:
             logger.debug("Loaded %s sessions from cache", len(self.sessions))
-        self._ccusage_rollups: Dict[str, AggregatedUsage] = {}
-
     def _load_snapshots(self) -> None:
         try:
             with SNAPSHOT_PATH.open("r", encoding="utf-8") as handle:
@@ -453,47 +241,10 @@ class UsageTracker:
 
     def get_session_summaries(self) -> List[SessionSummary]:
         now = datetime.now(timezone.utc)
-        limit_info = self._resolve_limit_info()
-        limit_waiting_ts: Optional[datetime] = None
-        if (
-            limit_info.reached
-            and limit_info.timestamp is not None
-            and limit_info.timestamp > now
-        ):
-            limit_waiting_ts = limit_info.timestamp
-
-        def _is_recent(summary: SessionSummary, multiplier: float = 1.0) -> bool:
-            if summary.processes:
-                return True
-            if summary.last_activity is None:
-                return False
-            delta = now - summary.last_activity.astimezone(timezone.utc)
-            threshold = max(self.config.idle_seconds, 60) * max(multiplier, 1.0)
-            return delta.total_seconds() <= threshold
-
         summaries: List[SessionSummary] = []
         for state in self.sessions.values():
             status = self._determine_status(state, now)
-            summary = state.clone_summary(status)
-            if limit_waiting_ts is not None:
-                is_active = (
-                    bool(summary.processes)
-                    or (summary.pending_tool_count > 0 and _is_recent(summary, 2.0))
-                    or (
-                        (summary.awaiting_approval or summary.awaiting_message)
-                        and _is_recent(summary, 1.0)
-                    )
-                    or (
-                        summary.status != SessionStatus.IDLE and _is_recent(summary, 1.0)
-                    )
-                )
-                if is_active:
-                    summary.limit_blocked = True
-                    summary.limit_reset_at = limit_waiting_ts
-                elif summary.limit_reset_at == limit_waiting_ts:
-                    summary.limit_blocked = False
-                    summary.limit_reset_at = None
-            summaries.append(summary)
+            summaries.append(state.clone_summary(status))
         summaries.sort(key=_session_sort_key, reverse=True)
         return summaries
 
@@ -502,139 +253,48 @@ class UsageTracker:
         seven_days_ago = today_local - timedelta(days=6)
         month_start = today_local.replace(day=1)
 
-        normalized_totals: Dict[str, UsageTotals] = {}
-        for raw_key, totals in list(self.daily_totals.items()):
-            normalized_key = _normalize_daily_key(raw_key)
-            if not normalized_key:
-                continue
-            bucket = normalized_totals.get(normalized_key)
-            if bucket is None:
-                bucket = UsageTotals()
-                normalized_totals[normalized_key] = bucket
-            bucket.merge(totals)
-        self.daily_totals = defaultdict(UsageTotals, normalized_totals)
-
-        normalized_costs: Dict[str, float] = {}
-        for raw_key, cost in list(self.daily_costs.items()):
-            normalized_key = _normalize_daily_key(raw_key)
-            if not normalized_key:
-                continue
-            normalized_costs[normalized_key] = normalized_costs.get(normalized_key, 0.0) + cost
-        self.daily_costs = defaultdict(float, normalized_costs)
-
-        today_roll = self._ccusage_rollups.get("today")
-        seven_day_roll = self._ccusage_rollups.get("seven_day")
-        month_roll = self._ccusage_rollups.get("month")
-        all_time_roll = self._ccusage_rollups.get("all_time")
-
-        today_totals = _clone_totals(today_roll.totals) if today_roll else UsageTotals()
-        seven_day_totals = _clone_totals(seven_day_roll.totals) if seven_day_roll else UsageTotals()
-        month_totals = _clone_totals(month_roll.totals) if month_roll else UsageTotals()
-        all_time_totals = _clone_totals(all_time_roll.totals) if all_time_roll else UsageTotals()
-
-        today_cost = today_roll.cost if today_roll else None
-        seven_day_cost = seven_day_roll.cost if seven_day_roll else None
-        month_cost = month_roll.cost if month_roll else None
-        all_time_cost = all_time_roll.cost if all_time_roll else None
-
-        fallback_today = UsageTotals()
-        fallback_seven = UsageTotals()
-        fallback_month = UsageTotals()
-        fallback_all = UsageTotals()
+        today_totals = UsageTotals()
+        seven_day_totals = UsageTotals()
+        month_totals = UsageTotals()
 
         for day_key, totals in self.daily_totals.items():
             try:
                 day = date.fromisoformat(day_key)
             except ValueError:
                 continue
-            fallback_all.merge(totals)
             if day == today_local:
-                fallback_today.merge(totals)
+                today_totals.merge(totals)
             if seven_days_ago <= day <= today_local:
-                fallback_seven.merge(totals)
+                seven_day_totals.merge(totals)
             if day >= month_start:
-                fallback_month.merge(totals)
+                month_totals.merge(totals)
 
-        if today_totals.total_tokens == 0 and fallback_today.total_tokens:
-            today_totals = _clone_totals(fallback_today)
-        if seven_day_totals.total_tokens == 0 and fallback_seven.total_tokens:
-            seven_day_totals = _clone_totals(fallback_seven)
-        if month_totals.total_tokens == 0 and fallback_month.total_tokens:
-            month_totals = _clone_totals(fallback_month)
-        if all_time_totals.total_tokens == 0 and fallback_all.total_tokens:
-            all_time_totals = _clone_totals(fallback_all)
+        limit_info = self._resolve_limit_info()
+        window_info = self._compute_window_info()
 
-        def _sum_range(predicate) -> Optional[float]:
-            total = 0.0
-            found = False
-            for day_key, cost in self.daily_costs.items():
-                try:
-                    day = date.fromisoformat(day_key)
-                except ValueError:
-                    continue
-                if predicate(day):
-                    total += cost
-                    found = True
-            return total if found else None
-
-        if today_cost is None:
-            today_cost = _sum_range(lambda d: d == today_local)
-        if seven_day_cost is None:
-            seven_day_cost = _sum_range(lambda d: seven_days_ago <= d <= today_local)
-        if month_cost is None:
-            month_cost = _sum_range(lambda d: d >= month_start)
-        if all_time_cost is None:
-            all_time_cost = _sum_range(lambda _: True)
-
-        if (
-            today_cost is None
-            or seven_day_cost is None
-            or month_cost is None
-            or all_time_cost is None
-        ):
-            session_costs_by_day: Dict[date, float] = defaultdict(float)
-            session_costs_all = 0.0
-            for session in self.sessions.values():
-                if session.cost_usd <= 0:
-                    continue
-                session_costs_all += session.cost_usd
-                if session.last_activity is None:
-                    continue
-                local_day = to_local(session.last_activity).date()
-                session_costs_by_day[local_day] += session.cost_usd
-
-            if today_cost is None:
-                today_cost = session_costs_by_day.get(today_local, 0.0)
-            if seven_day_cost is None:
-                seven_day_cost = sum(
-                    cost
-                    for day, cost in session_costs_by_day.items()
-                    if seven_days_ago <= day <= today_local
-                )
-            if month_cost is None:
-                month_cost = sum(
-                    cost for day, cost in session_costs_by_day.items() if day >= month_start
-                )
-            if all_time_cost is None:
-                all_time_cost = session_costs_all
-
-        today_cost = today_cost or 0.0
-        seven_day_cost = seven_day_cost or 0.0
-        month_cost = month_cost or 0.0
-        all_time_cost = all_time_cost or 0.0
+        today_cost = self.daily_costs.get(today_local.strftime("%Y-%m-%d"), 0.0)
+        seven_day_cost = 0.0
+        month_cost = 0.0
+        for day_key, cost in self.daily_costs.items():
+            try:
+                day = date.fromisoformat(day_key)
+            except ValueError:
+                continue
+            if seven_days_ago <= day <= today_local:
+                seven_day_cost += cost
+            if day >= month_start:
+                month_cost += cost
 
         return UsageSummary(
             today=today_totals,
             seven_day=seven_day_totals,
             month=month_totals,
-            all_time=all_time_totals,
             total_sessions=len(self.sessions),
-            limit_info=self._resolve_limit_info(),
-            window_info=self._compute_window_info(),
+            limit_info=limit_info,
+            window_info=window_info,
             today_cost=today_cost,
             seven_day_cost=seven_day_cost,
             month_cost=month_cost,
-            all_time_cost=all_time_cost,
         )
 
     def refresh_active_processes(self, session_ids: Iterable[str]) -> None:
@@ -906,10 +566,9 @@ class UsageTracker:
             now_ts = time.time()
             if now_ts - self._last_price_refresh < self.config.ccusage_refresh_interval:
                 return
-            self._ccusage_rollups = {}
             try:
                 session_proc = subprocess.run(
-                    ["ccusage", "session", "--json"],
+                    ["ccusage", "session", "--json", "-O"],
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -920,8 +579,9 @@ class UsageTracker:
                     by_session: Dict[str, float] = {}
                     by_project: Dict[str, float] = {}
                     for item in sessions:
-                        cost = _safe_float(item.get("totalCost"))
-                        if cost <= 0.0:
+                        try:
+                            cost = float(item.get("totalCost", 0.0))
+                        except (TypeError, ValueError):
                             continue
                         session_key = item.get("sessionId")
                         if isinstance(session_key, str) and session_key:
@@ -938,19 +598,16 @@ class UsageTracker:
                             if isinstance(alt_value, str) and alt_value:
                                 by_project.setdefault(alt_value, cost)
                     combined_mapping = {**by_project, **by_session}
-                    if combined_mapping:
-                        self.session_costs = combined_mapping
-                        for session in self.sessions.values():
-                            cost = combined_mapping.get(session.session_id)
-                            if cost is None and session.project:
-                                cost = combined_mapping.get(session.project)
-                            if cost is not None:
-                                session.cost_usd = cost
-
-                today_local = datetime.now().astimezone().date()
+                    self.session_costs = combined_mapping
+                    for session in self.sessions.values():
+                        cost = combined_mapping.get(session.session_id)
+                        if cost is None and session.project:
+                            cost = combined_mapping.get(session.project)
+                        if cost is not None:
+                            session.cost_usd = cost
 
                 daily_proc = subprocess.run(
-                    ["ccusage", "daily", "--json"],
+                    ["ccusage", "daily", "--json", "-O"],
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -961,115 +618,27 @@ class UsageTracker:
                     costs: Dict[str, float] = {}
                     totals_map: Dict[str, UsageTotals] = {}
                     for item in daily_entries:
-                        raw_key = item.get("date")
-                        normalized_key = _normalize_daily_key(raw_key)
-                        if not normalized_key:
+                        date_str = item.get("date")
+                        if not date_str:
                             continue
-                        total_cost = _safe_float(item.get("totalCost"))
-                        costs[normalized_key] = total_cost
-                        totals = _usage_totals_from_entry(item)
-                        totals_map[normalized_key] = totals
+                        total_cost = float(item.get("totalCost", 0.0))
+                        costs[date_str] = total_cost
+                        totals = UsageTotals()
+                        totals.input_tokens = int(item.get("inputTokens", 0))
+                        totals.output_tokens = int(item.get("outputTokens", 0))
+                        totals.cache_creation_tokens = int(item.get("cacheCreationTokens", 0))
+                        totals.cache_read_tokens = int(item.get("cacheReadTokens", 0))
+                        totals_map[date_str] = totals
                     if totals_map:
                         self.daily_totals.update(totals_map)
-                    if costs:
-                        self.daily_costs = defaultdict(float, costs)
-                    today_key = today_local.strftime("%Y-%m-%d")
-                    today_totals = totals_map.get(today_key)
-                    if today_totals:
-                        self._ccusage_rollups["today"] = AggregatedUsage(
-                            totals=_clone_totals(today_totals),
-                            cost=costs.get(today_key, 0.0),
-                        )
-
-                weekly_proc = subprocess.run(
-                    ["ccusage", "weekly", "--json"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                if weekly_proc.returncode == 0 and weekly_proc.stdout:
-                    weekly_data = json.loads(weekly_proc.stdout)
-                    weekly_entries = (
-                        weekly_data.get("weekly")
-                        or weekly_data.get("weeks")
-                        or weekly_data.get("data")
-                        or []
-                    )
-                    target_week = None
-                    for entry in weekly_entries:
-                        if _entry_covers_date(entry, today_local):
-                            target_week = entry
-                            break
-                    if target_week is None:
-                        target_week = _pick_latest_entry(weekly_entries)
-                    if target_week:
-                        week_totals = _usage_totals_from_entry(target_week)
-                        week_cost = _safe_float(
-                            target_week.get("totalCost") or target_week.get("cost")
-                        )
-                        self._ccusage_rollups["seven_day"] = AggregatedUsage(
-                            totals=_clone_totals(week_totals), cost=week_cost
-                        )
-
-                monthly_proc = subprocess.run(
-                    ["ccusage", "monthly", "--json"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                if monthly_proc.returncode == 0 and monthly_proc.stdout:
-                    monthly_data = json.loads(monthly_proc.stdout)
-                    monthly_entries = (
-                        monthly_data.get("monthly")
-                        or monthly_data.get("months")
-                        or monthly_data.get("data")
-                        or []
-                    )
-                    target_month = None
-                    target_month_key = today_local.strftime("%Y-%m")
-                    for entry in monthly_entries:
-                        month_key = _extract_month_key(entry)
-                        if month_key == target_month_key or _entry_covers_date(
-                            entry, today_local
-                        ):
-                            target_month = entry
-                            break
-                    if target_month is None:
-                        target_month = _pick_latest_entry(monthly_entries)
-                    if target_month:
-                        month_totals = _usage_totals_from_entry(target_month)
-                        month_cost = _safe_float(
-                            target_month.get("totalCost") or target_month.get("cost")
-                        )
-                        self._ccusage_rollups["month"] = AggregatedUsage(
-                            totals=_clone_totals(month_totals), cost=month_cost
-                        )
-                    totals_payload = monthly_data.get("totals")
-                    if isinstance(totals_payload, dict):
-                        aggregate_totals = _usage_totals_from_entry(totals_payload)
-                        aggregate_cost = _safe_float(totals_payload.get("totalCost"))
-                        self._ccusage_rollups["all_time"] = AggregatedUsage(
-                            totals=aggregate_totals, cost=aggregate_cost
-                        )
-                    elif monthly_entries:
-                        aggregate_totals = UsageTotals()
-                        aggregate_cost = 0.0
-                        for entry in monthly_entries:
-                            aggregate_totals.merge(_usage_totals_from_entry(entry))
-                            aggregate_cost += _safe_float(
-                                entry.get("totalCost") or entry.get("cost")
-                            )
-                        self._ccusage_rollups["all_time"] = AggregatedUsage(
-                            totals=aggregate_totals, cost=aggregate_cost
-                        )
+                    self.daily_costs = costs
 
                 self._persist_session_cache()
                 self._last_price_refresh = time.time()
                 logger.debug(
-                    "ccusage refresh complete: sessions=%s daily=%s rollups=%s",
+                    "ccusage refresh complete: sessions=%s daily=%s",
                     len(self.session_costs),
                     len(self.daily_costs),
-                    list(self._ccusage_rollups.keys()),
                 )
             except (FileNotFoundError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
                 logger.debug("ccusage refresh failed: %s", exc, exc_info=bool(DEBUG_MODE))

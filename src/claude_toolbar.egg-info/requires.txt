@@ -4,6 +4,3 @@ rumps>=0.4
 [dev]
 black>=24.1
 ruff>=0.3
-
-[mac]
-py2app>=0.28

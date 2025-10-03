@@ -142,14 +142,12 @@ class UsageSummary:
     today: UsageTotals
     seven_day: UsageTotals
     month: UsageTotals
-    all_time: UsageTotals
     total_sessions: int
     limit_info: LimitInfo
     window_info: WindowInfo
     today_cost: float = 0.0
     seven_day_cost: float = 0.0
     month_cost: float = 0.0
-    all_time_cost: float = 0.0
 
 
 __all__ = [
