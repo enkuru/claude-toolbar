@@ -821,7 +821,9 @@ def _session_status_icon(summary: SessionSummary, idle_seconds: int) -> str:
         if _limit_reset_available(summary):
             return ORANGE_DOT
         return RED_DOT
-    if summary.awaiting_approval or summary.awaiting_message:
+    if summary.awaiting_approval and summary.processes:
+        return ORANGE_DOT
+    if summary.awaiting_message and summary.processes:
         return ORANGE_DOT
     if summary.pending_tool_count and _session_is_recent(summary, idle_seconds, 2.0):
         return BLUE_DOT
@@ -841,8 +843,10 @@ def _session_status_text(summary: SessionSummary, idle_seconds: int) -> str:
             suffix = f"in {remaining}" if remaining else "soon"
             return f"Waiting for limit reset ({suffix})"
         return "Waiting for limit reset"
-    if summary.awaiting_approval or summary.awaiting_message:
+    if summary.awaiting_approval and summary.processes:
         return "Awaiting approval"
+    if summary.awaiting_message and summary.processes:
+        return summary.awaiting_message
     if summary.pending_tool_count:
         if _session_is_recent(summary, idle_seconds, 2.0):
             count = summary.pending_tool_count

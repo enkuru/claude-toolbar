@@ -1120,7 +1120,13 @@ class UsageTracker:
         self, session: SessionState, now: datetime
     ) -> SessionStatus:
         if session.awaiting_approval:
-            return SessionStatus.WAITING
+            has_running_process = any(
+                proc.status == "running" for proc in session.processes
+            )
+            if has_running_process:
+                return SessionStatus.WAITING
+            session.awaiting_approval = False
+            session.awaiting_message = None
 
         last_activity = session.last_activity
         recent = False
@@ -1140,27 +1146,20 @@ class UsageTracker:
         now = datetime.now(timezone.utc)
         cutoff = now - duration
 
-        recent_events: List[datetime] = []
-        all_events: List[datetime] = []
-
-        for session_id, history in self._activity_history.items():
-            if not history:
-                continue
+        events: List[datetime] = []
+        for history in self._activity_history.values():
             for ts in history:
                 if ts is None:
                     continue
-                all_events.append(ts)
-                if ts >= cutoff:
-                    recent_events.append(ts)
+                events.append(ts.astimezone(timezone.utc))
 
-        if not all_events:
-            for session in self.sessions.values():
-                if session.last_activity:
-                    all_events.append(session.last_activity)
-                    if session.last_activity >= cutoff:
-                        recent_events.append(session.last_activity)
-                elif session.first_activity and session.first_activity >= cutoff:
-                    recent_events.append(session.first_activity)
+        for session in self.sessions.values():
+            if session.last_activity:
+                events.append(session.last_activity.astimezone(timezone.utc))
+            elif session.first_activity:
+                events.append(session.first_activity.astimezone(timezone.utc))
+
+        recent_events = [ts for ts in events if ts >= cutoff]
 
         active_start = None
         active_end = None
@@ -1168,13 +1167,11 @@ class UsageTracker:
         last_end = None
 
         if recent_events:
-            recent_events.sort()
-            active_start = recent_events[0]
+            active_start = min(recent_events)
             active_end = active_start + duration
 
-        if all_events:
-            all_events.sort()
-            last_start = all_events[-1]
+        if events:
+            last_start = max(events)
             last_end = last_start + duration
             if active_start is None and last_start >= cutoff and now < last_end:
                 active_start = last_start
